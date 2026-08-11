@@ -364,7 +364,7 @@ WaitForCardKeyValidation()
 print("卡密验证通过，脚本继续执行！")
 
 
-local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/dream77239/china-ui/refs/heads/main/main%20(6).lua"))()
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 local Window = WindUI:CreateWindow({
     Title = "<font color=\"#E6CA65\">定制</font>",
     Icon = "chess-king",
