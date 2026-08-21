@@ -9945,6 +9945,333 @@ Tab:Toggle({
 })
 
 end
+local function baoheqianshui()
+Window:Divider()
+
+local Tab = Window:Tab({
+    Title = "实用功能",
+    Icon = "hammer",
+    Locked = false,
+})
+local espTab = Window:Tab({  
+    Title = "透视",  
+    Icon = "eye",  
+    Locked = false,
+})
+local autoTab = Window:Tab({
+    Title = "自动类",
+    Icon = "trash",
+    Locked = false,
+})
+local tpTab = Window:Tab({
+    Title = "传送",
+    Icon = "zap",
+    Locked = false,
+})
+Tab:Button({
+    Title = "汉化飞行",
+    Callback = function()
+        loadstring("\108\111\97\100\115\116\114\105\110\103\40\103\97\109\101\58\72\116\116\112\71\101\116\34\104\116\116\112\115\58\47\47\112\97\115\116\101\98\105\110\46\99\111\109\47\114\97\119\47\83\76\120\100\97\75\112\119\34\41\40\41\10")()
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local tpwalking = false
+local tpwalkSpeed = 25
+
+Tab:Toggle({
+    Title = "速度",
+    Value = false,
+    Callback = function(state)
+        tpwalking = state
+        if state then
+            spawn(function()
+                while tpwalking do
+                    local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local hrp = chr:FindFirstChild("HumanoidRootPart")
+                    local hum = chr:FindFirstChildWhichIsA("Humanoid")
+                    local delta = RunService.Heartbeat:Wait()
+                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * tpwalkSpeed * delta)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+Tab:Slider({
+    Title = "速度调节",
+    Value = {
+        Min = 0,
+        Max = 100,
+        Default = tpwalkSpeed,
+    },
+    Callback = function(value)
+        tpwalkSpeed = value
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+local NoclipEnabled = false
+local NoclipConnection
+
+local function setCharacterCollision(character, state)
+    for _, v in ipairs(character:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CanCollide = state
+        end
+    end
+end
+
+local function enableNoclip()
+    local character = LocalPlayer.Character
+    if not character then return end
+
+    setCharacterCollision(character, false)
+
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+    end
+
+    NoclipConnection = RunService.Stepped:Connect(function()
+        if not NoclipEnabled then return end
+        local char = LocalPlayer.Character
+        if char then
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+
+local function disableNoclip()
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+        NoclipConnection = nil
+    end
+
+    local character = LocalPlayer.Character
+    if character then
+        setCharacterCollision(character, true)
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if NoclipEnabled then
+        task.wait(0.2)
+        enableNoclip()
+    end
+end)
+
+Tab:Toggle({
+    Title = "穿墙",
+    Value = false,
+    Callback = function(state)
+        NoclipEnabled = state
+        if state then
+            enableNoclip()
+        else
+            disableNoclip()
+        end
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+Tab:Button({
+    Title = "删除雾",
+    Desc = "每次进出潜艇都要重新点击/运行一遍删除雾和高亮功能",
+    Callback = function()
+        local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
+        if sky then sky:Destroy() end
+    end,
+})
+
+Tab:Toggle({
+    Title = "地图高亮",
+    Value = false,
+    Callback = function(state)
+        local Lighting = game:GetService("Lighting")
+        if state then
+            Lighting.Brightness = 5
+            Lighting.Ambient = Color3.fromRGB(160, 160, 160)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+        else
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(70, 70, 70)
+            Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        end
+    end,
+})
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local MineRemote = ReplicatedStorage:WaitForChild("InventoryRemotes"):WaitForChild("RequestItemAction")
+
+local AutoMineEnabled = false
+local MonsterESPEnabled = false
+local PlayerESPEnabled = false
+
+local ESPFolder = Instance.new("Folder")
+ESPFolder.Name = "CustomESP_Storage"
+ESPFolder.Parent = Workspace
+
+local function GetHighlight(target, color)
+	local name = "ESP_" .. target.Name
+	local highlight = ESPFolder:FindFirstChild(name)
+	
+	if not highlight or highlight.Adornee ~= target then
+		if highlight then highlight:Destroy() end
+		highlight = Instance.new("Highlight")
+		highlight.Name = name
+		highlight.Adornee = target
+		highlight.FillTransparency = 0.7
+		highlight.OutlineTransparency = 0
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.Parent = ESPFolder
+	end
+	
+	highlight.FillColor = color
+	highlight.OutlineColor = color
+	highlight.Enabled = true
+end
+
+local function ClearInvalidESP()
+	for _, highlight in ipairs(ESPFolder:GetChildren()) do
+		if highlight:IsA("Highlight") then
+			if not highlight.Adornee or not highlight.Adornee.Parent then
+				highlight:Destroy()
+			end
+		end
+	end
+end
+
+local function RemoveESP(target)
+	local highlight = ESPFolder:FindFirstChild("ESP_" .. target.Name)
+	if highlight then
+		highlight:Destroy()
+	end
+end
+
+local function UpdateESP()
+	ClearInvalidESP()
+
+	if MonsterESPEnabled then
+		local balor = Workspace.Camera:FindFirstChild("BalorHallucination")
+		if balor then
+			GetHighlight(balor, Color3.fromRGB(255, 0, 0))
+		end
+
+		local monstersFolder = Workspace:FindFirstChild("CurrentMonsters")
+		if monstersFolder then
+			for _, monster in ipairs(monstersFolder:GetChildren()) do
+				GetHighlight(monster, Color3.fromRGB(255, 0, 0))
+			end
+		end
+	else
+		local balor = Workspace.Camera:FindFirstChild("BalorHallucination")
+		if balor then RemoveESP(balor) end
+		
+		local monstersFolder = Workspace:FindFirstChild("CurrentMonsters")
+		if monstersFolder then
+			for _, monster in ipairs(monstersFolder:GetChildren()) do
+				RemoveESP(monster)
+			end
+		end
+	end
+
+	if PlayerESPEnabled then
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer and player.Character then
+				GetHighlight(player.Character, Color3.fromRGB(0, 255, 0))
+			end
+		end
+	else
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer and player.Character then
+				RemoveESP(player.Character)
+			end
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(UpdateESP)
+
+task.spawn(function()
+	while true do
+		task.wait(0.2)
+		if AutoMineEnabled then
+			local Character = LocalPlayer.Character
+			if Character then
+				local PrimaryPart = Character.PrimaryPart or Character:FindFirstChild("HumanoidRootPart")
+				if PrimaryPart then
+					local OriginPos = PrimaryPart.Position
+					local TargetDirection = PrimaryPart.CFrame.LookVector * 10
+					
+					local Args = {
+						"PickaxeMine",
+						{
+							Direction = TargetDirection,
+							Origin = OriginPos,
+							Power = 3.6
+						}
+					}
+					MineRemote:FireServer(unpack(Args))
+				end
+			end
+		end
+	end
+end)
+
+autoTab:Toggle({
+    Title = "自动挖矿",
+    Value = false,
+    Callback = function(state)
+        AutoMineEnabled = state
+    end
+})
+
+espTab:Toggle({
+    Title = "怪物透视(红色)",
+    Value = false,
+    Callback = function(state)
+        MonsterESPEnabled = state
+    end
+})
+
+espTab:Toggle({
+    Title = "玩家透视(绿色)",
+    Value = false,
+    Callback = function(state)
+        PlayerESPEnabled = state
+    end
+})
+
+tpTab:Button({
+    Title = "传送回潜艇",
+    Callback = function()
+        local character = LocalPlayer.Character
+        local hrp = character and (character.PrimaryPart or character:FindFirstChild("HumanoidRootPart"))
+        
+        if hrp then
+            hrp.CFrame = CFrame.new(169.73, 19.44, 87.42)
+        end
+    end
+})
+
+end
 local Tab = Window:Tab({  
     Title = "游戏选择",  
     Icon = "house",  
@@ -9977,7 +10304,8 @@ local game_functions = {
     [116802177276368] = fssd,
     [17220221299] = xq,
     [131403226200723] = eye,
-    [81156978660382] = night
+    [81156978660382] = night,
+    [127506026273368] = baoheqianshui
 }
 
 local function check_game()
@@ -10089,5 +10417,11 @@ Tab:Button({
     Title = "与弗雷迪熊共度的无尽之夜",
     Callback = function()
     night()
+    end
+})
+Tab:Button({
+    Title = "饱和潜水",
+    Callback = function()
+    baoheqianshui()
     end
 })
