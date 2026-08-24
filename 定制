@@ -10272,6 +10272,335 @@ tpTab:Button({
 })
 
 end
+local function shufu()
+Window:Divider()
+local Tab = Window:Tab({  
+    Title = "实用功能",  
+    Icon = "hammer",  
+    Locked = false,
+})
+local espTab = Window:Tab({  
+    Title = "透视",  
+    Icon = "eye",  
+    Locked = false,
+})
+local autoTab = Window:Tab({  
+    Title = "自动类",  
+    Icon = "shield",  
+    Locked = false,
+})
+Tab:Button({
+    Title = "汉化飞行",
+    Callback = function()
+        loadstring("\108\111\97\100\115\116\114\105\110\103\40\103\97\109\101\58\72\116\116\112\71\101\116\34\104\116\116\112\115\58\47\47\112\97\115\116\101\98\105\110\46\99\111\109\47\114\97\119\47\83\76\120\100\97\75\112\119\34\41\40\41\10")()
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local tpwalking = false
+local tpwalkSpeed = 30
+
+Tab:Toggle({
+    Title = "速度",
+    Value = false,
+    Callback = function(state)
+        tpwalking = state
+        if state then
+            spawn(function()
+                while tpwalking do
+                    local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local hrp = chr:FindFirstChild("HumanoidRootPart")
+                    local hum = chr:FindFirstChildWhichIsA("Humanoid")
+                    local delta = RunService.Heartbeat:Wait()
+                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * tpwalkSpeed * delta)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+Tab:Slider({
+    Title = "速度调节",
+    Value = {
+        Min = 0,
+        Max = 100,
+        Default = tpwalkSpeed,
+    },
+    Callback = function(value)
+        tpwalkSpeed = value
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+local NoclipEnabled = false
+local NoclipConnection
+
+local function setCharacterCollision(character, state)
+    for _, v in ipairs(character:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CanCollide = state
+        end
+    end
+end
+
+local function enableNoclip()
+    local character = LocalPlayer.Character
+    if not character then return end
+
+    setCharacterCollision(character, false)
+
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+    end
+
+    NoclipConnection = RunService.Stepped:Connect(function()
+        if not NoclipEnabled then return end
+        local char = LocalPlayer.Character
+        if char then
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+
+local function disableNoclip()
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+        NoclipConnection = nil
+    end
+
+    local character = LocalPlayer.Character
+    if character then
+        setCharacterCollision(character, true)
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if NoclipEnabled then
+        task.wait(0.2)
+        enableNoclip()
+    end
+end)
+
+Tab:Toggle({
+    Title = "穿墙",
+    Value = false,
+    Callback = function(state)
+        NoclipEnabled = state
+        if state then
+            enableNoclip()
+        else
+            disableNoclip()
+        end
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+Tab:Button({
+    Title = "删除雾",
+    Callback = function()
+        local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
+        if sky then sky:Destroy() end
+    end,
+})
+
+Tab:Toggle({
+    Title = "地图高亮",
+    Value = false,
+    Callback = function(state)
+        local Lighting = game:GetService("Lighting")
+        if state then
+            Lighting.Brightness = 5
+            Lighting.Ambient = Color3.fromRGB(160, 160, 160)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+        else
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(70, 70, 70)
+            Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        end
+    end,
+})
+local p = game:GetService("Players").LocalPlayer
+local r = game:GetService("RunService")
+local rep = game:GetService("ReplicatedStorage")
+local ws = game:GetService("Workspace")
+
+local w = ws:WaitForChild("Characters"):WaitForChild("Entities")
+local qte_remote = rep:WaitForChild("Assets"):WaitForChild("Events"):WaitForChild("QTERemote")
+local blk_remote = rep:WaitForChild("Assets"):WaitForChild("Events"):WaitForChild("Block")
+
+local qte_seq = 1
+local st1 = false
+local st2 = false
+local st3 = false
+local on = false
+local con = nil
+
+local function clresp()
+	for _, v in pairs(w:GetChildren()) do
+		local h = v:FindFirstChild("myesp")
+		if h then
+			h:Destroy()
+		end
+	end
+end
+
+local function chkesp(e)
+	if not e:IsA("Model") then return end
+	local h = e:FindFirstChild("myesp")
+	if not h or not h:IsA("Highlight") then
+		if h then h:Destroy() end
+		for _, v in pairs(e:GetChildren()) do
+			if v:IsA("Highlight") then
+				v:Destroy()
+			end
+		end
+		local nh = Instance.new("Highlight")
+		nh.Name = "myesp"
+		nh.FillTransparency = 1
+		nh.OutlineColor = Color3.fromRGB(255, 0, 0)
+		nh.OutlineTransparency = 0
+		nh.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		nh.Parent = e
+	else
+		if h.OutlineColor ~= Color3.fromRGB(255, 0, 0) or h.DepthMode ~= Enum.HighlightDepthMode.AlwaysOnTop then
+			h.OutlineColor = Color3.fromRGB(255, 0, 0)
+			h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		end
+	end
+end
+
+local function updesp()
+	for _, v in pairs(w:GetChildren()) do
+		chkesp(v)
+	end
+end
+
+local function ap1(c)
+	if c then
+		c:SetAttribute("InfiniteStamina", st1)
+	end
+end
+
+local function ap2()
+	p:SetAttribute("AutoQTE", st2)
+end
+
+espTab:Toggle({
+    Title = "透视怪物(红色)",
+    Value = false,
+    Callback = function(state)
+        on = state
+        if on then
+            con = r.Heartbeat:Connect(updesp)
+        else
+            if con then con:Disconnect() con = nil end
+            clresp()
+        end
+    end
+})
+
+Tab:Toggle({
+    Title = "无限体力",
+    Value = false,
+    Callback = function(state)
+        st1 = state
+        if p.Character then
+            ap1(p.Character)
+        end
+    end
+})
+
+autoTab:Toggle({
+    Title = "自动qte",
+    Value = false,
+    Callback = function(state)
+        st2 = state
+        ap2()
+    end
+})
+
+autoTab:Toggle({
+    Title = "自动格挡",
+    Value = false,
+    Callback = function(state)
+        st3 = state
+    end
+})
+
+task.spawn(function()
+	while true do
+		task.wait(0.1)
+		if st2 then
+			qte_remote:FireServer("KeyResult", qte_seq, true)
+			qte_seq = qte_seq + 1
+			qte_remote:FireServer("ClashResult", true)
+		else
+			qte_seq = 1
+		end
+	end
+end)
+
+r.RenderStepped:Connect(function()
+	if not st3 then return end
+	local char = p.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local ents = ws:FindFirstChild("Characters") and ws.Characters:FindFirstChild("Entities")
+	if not ents then return end
+
+	local should_block = false
+
+	for _, ent in ipairs(ents:GetChildren()) do
+		if ent ~= char then
+			local e_hrp = ent:FindFirstChild("HumanoidRootPart") or ent:FindFirstChild("PrimaryPart")
+			local e_hum = ent:FindFirstChildOfClass("Humanoid")
+			if e_hrp and e_hum and e_hum.Health > 0 then
+				local dist = (e_hrp.Position - hrp.Position).Magnitude
+				if dist <= 10 then
+					local to_player = (hrp.Position - e_hrp.Position).Unit
+					local look_dir = e_hrp.CFrame.LookVector
+					local dot = look_dir:Dot(to_player)
+					if dot > 0.5 then
+						should_block = true
+						break
+					end
+				end
+			end
+		end
+	end
+
+	if should_block then
+		blk_remote:FireServer()
+	end
+end)
+
+p.CharacterAdded:Connect(function(c)
+	task.wait(0.5)
+	ap1(c)
+end)
+
+p.AttributeChanged:Connect(function(a)
+	if a == "AutoQTE" and p:GetAttribute("AutoQTE") ~= st2 then
+		ap2()
+	end
+end)
+
+end
 local Tab = Window:Tab({  
     Title = "游戏选择",  
     Icon = "house",  
@@ -10305,7 +10634,8 @@ local game_functions = {
     [17220221299] = xq,
     [131403226200723] = eye,
     [81156978660382] = night,
-    [127506026273368] = baoheqianshui
+    [127506026273368] = baoheqianshui,
+    [90521763301609] = shufu
 }
 
 local function check_game()
@@ -10423,5 +10753,11 @@ Tab:Button({
     Title = "饱和潜水",
     Callback = function()
     baoheqianshui()
+    end
+})
+Tab:Button({
+    Title = "被荒凉所束缚",
+    Callback = function()
+    shufu()
     end
 })
