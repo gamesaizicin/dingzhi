@@ -1,3 +1,10 @@
+local current_hwid = gethwid()
+
+if current_hwid ~= "03f6eaa0b05fd3ffdc96c8226f0b286d2680e375e46e458dbc10e97f9fc83033" then
+    game.Players.LocalPlayer:Kick("Access Denied")
+    return
+end
+--你好，爱看源码的ll
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
@@ -7753,6 +7760,20 @@ local localPlayer = Players.LocalPlayer
 local isEnabled = false
 local avoidDistance = 100
 local loopConnection = nil
+local trackedEntities = {}
+local connections = {}
+
+local targets = {
+    ["Jeff"] = true,
+    ["LeviathanBaldi"] = true,
+    ["LeviathanBig"] = true,
+    ["LeviathanGranny"] = true,
+    ["LeviathanGrannySmall"] = true,
+    ["LeviathanSlender"] = true,
+    ["LeviathanSmall"] = true,
+    ["TestLeviathan"] = true,
+    ["Theodore"] = true
+}
 
 local function getEntityPosition(object)
     if object:IsA("Model") then
@@ -7776,8 +7797,9 @@ local function handleAvoidance()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not rootPart or not humanoid then return end
     
-    for _, v in ipairs(game.Workspace:GetDescendants()) do
-        if (v:IsA("Model") or v:IsA("BasePart")) and string.sub(v.Name, 1, 9) == "Leviathan" then
+    for i = #trackedEntities, 1, -1 do
+        local v = trackedEntities[i]
+        if v and v.Parent then
             local entityPos = getEntityPosition(v)
             if entityPos then
                 local currentPos = rootPart.Position
@@ -7791,8 +7813,42 @@ local function handleAvoidance()
                     rootPart.CFrame = CFrame.new(Vector3.new(targetPosition.X, currentPos.Y, targetPosition.Z), Vector3.new(entityPos.X, currentPos.Y, entityPos.Z))
                 end
             end
+        else
+            table.remove(trackedEntities, i)
         end
     end
+end
+
+local function startTracking()
+    table.clear(trackedEntities)
+    
+    local function checkObj(v)
+        if targets[v.Name] and (v:IsA("Model") or v:IsA("BasePart")) then
+            table.insert(trackedEntities, v)
+        end
+    end
+    
+    for _, v in ipairs(workspace:GetDescendants()) do
+        checkObj(v)
+    end
+    
+    table.insert(connections, workspace.DescendantAdded:Connect(checkObj))
+    table.insert(connections, workspace.DescendantRemoving:Connect(function(v)
+        for i = #trackedEntities, 1, -1 do
+            if trackedEntities[i] == v then
+                table.remove(trackedEntities, i)
+                break
+            end
+        end
+    end))
+end
+
+local function stopTracking()
+    for _, conn in ipairs(connections) do
+        conn:Disconnect()
+    end
+    table.clear(connections)
+    table.clear(trackedEntities)
 end
 
 Tab:Toggle({
@@ -7801,6 +7857,7 @@ Tab:Toggle({
     Callback = function(state)
         isEnabled = state
         if isEnabled then
+            startTracking()
             if not loopConnection then
                 loopConnection = RunService.Heartbeat:Connect(handleAvoidance)
             end
@@ -7809,6 +7866,7 @@ Tab:Toggle({
                 loopConnection:Disconnect()
                 loopConnection = nil
             end
+            stopTracking()
         end
     end
 })
@@ -7824,6 +7882,7 @@ Tab:Slider({
         avoidDistance = value
     end
 })
+
 local Tab = Window:Tab({  
     Title = "透视",  
     Icon = "eye",  
