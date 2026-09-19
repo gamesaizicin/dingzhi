@@ -10751,6 +10751,7 @@ local ESP_NAME = "PlayerESP"
 local GEN_ESP_NAME = "GeneratorESP"
 local GEN_TEXT_NAME = "GeneratorProgress"
 local GEN_COLOR = Color3.fromRGB(200, 165, 255)
+local PLAYER_TEXT_NAME = "PlayerInfo"
 
 local function getIsMonster(char)
     local val = char:GetAttribute("IsMonster")
@@ -10781,13 +10782,14 @@ local function processPlayerESP(char)
     end
 
     if not shouldShow then
-        for _, child in ipairs(char:GetChildren()) do
-            if child:IsA("Highlight") and child.Name == ESP_NAME then
-                child:Destroy()
-            end
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Highlight") and child.Name == ESP_NAME then
+            child:Destroy()
         end
-        return
     end
+    removePlayerText(char)
+    return
+end
 
     local hl = nil
     for _, child in ipairs(char:GetChildren()) do
@@ -10810,6 +10812,9 @@ local function processPlayerESP(char)
 
     hl.FillColor = color
     hl.OutlineColor = color
+
+    ensurePlayerText(char)
+    updatePlayerText(char)
 end
 
 local function clearPlayerESP()
@@ -10821,6 +10826,7 @@ local function clearPlayerESP()
                     child:Destroy()
                 end
             end
+            removePlayerText(char)
         end
     end
 end
@@ -10848,6 +10854,7 @@ end
 
 local genHLRefs = setmetatable({}, {__mode = "k"})
 local genTextRefs = setmetatable({}, {__mode = "k"})
+local playerTextRefs = setmetatable({}, {__mode = "k"})
 
 local function removeGenHL(obj)
     local hl = genHLRefs[obj]
@@ -10914,7 +10921,79 @@ local function ensureGenText(obj)
         genTextRefs[obj] = bb
     end
 end
+local function removePlayerText(char)
+    local bb = playerTextRefs[char]
+    if bb then
+        bb:Destroy()
+        playerTextRefs[char] = nil
+    end
+end
 
+local function ensurePlayerText(char)
+    local bb = playerTextRefs[char]
+    if not bb or bb.Parent ~= char then
+        if bb then
+            bb:Destroy()
+        end
+        bb = Instance.new("BillboardGui")
+        bb.Name = PLAYER_TEXT_NAME
+        bb.Size = UDim2.new(0, 140, 0, 32)
+        bb.StudsOffset = Vector3.new(0, 3.2, 0)
+        bb.AlwaysOnTop = true
+        bb.LightInfluence = 0
+        bb.Adornee = char
+        bb.Parent = char
+
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.Name = "NameLabel"
+        nameLbl.Size = UDim2.new(1, 0, 0.5, 0)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        nameLbl.TextStrokeTransparency = 0.3
+        nameLbl.Font = Enum.Font.GothamBold
+        nameLbl.TextSize = 12
+        nameLbl.Text = ""
+        nameLbl.Parent = bb
+
+        local distLbl = Instance.new("TextLabel")
+        distLbl.Name = "DistLabel"
+        distLbl.Size = UDim2.new(1, 0, 0.5, 0)
+        distLbl.Position = UDim2.new(0, 0, 0.5, 0)
+        distLbl.BackgroundTransparency = 1
+        distLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        distLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        distLbl.TextStrokeTransparency = 0.3
+        distLbl.Font = Enum.Font.GothamBold
+        distLbl.TextSize = 12
+        distLbl.Text = ""
+        distLbl.Parent = bb
+
+        playerTextRefs[char] = bb
+    end
+end
+
+local function updatePlayerText(char)
+    local bb = playerTextRefs[char]
+    if not bb then
+        return
+    end
+    local nameLbl = bb:FindFirstChild("NameLabel")
+    local distLbl = bb:FindFirstChild("DistLabel")
+    if nameLbl then
+        nameLbl.Text = char.Name
+    end
+    if distLbl then
+        local myChar = LocalPlayer.Character
+        local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local theirHRP = char:FindFirstChild("HumanoidRootPart")
+        if myHRP and theirHRP then
+            distLbl.Text = tostring(math.floor((myHRP.Position - theirHRP.Position).Magnitude)) .. " studs"
+        else
+            distLbl.Text = ""
+        end
+    end
+end
 local function updateGenerators()
     local genMaps = workspace:FindFirstChild("GenMaps")
     if not genMaps then
@@ -11264,15 +11343,16 @@ task.spawn(function()
             applyStamina()
         end
         if monsterESPEnabled or survivorESPEnabled then
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer then
-                    local char = plr.Character
-                    if char then
-                        processPlayerESP(char)
-                    end
-                end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local char = plr.Character
+            if char then
+                processPlayerESP(char)
+                updatePlayerText(char)
             end
         end
+    end
+end
         task.wait(0.15)
     end
 end)
