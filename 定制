@@ -10752,6 +10752,7 @@ local GEN_ESP_NAME = "GeneratorESP"
 local GEN_TEXT_NAME = "GeneratorProgress"
 local GEN_COLOR = Color3.fromRGB(200, 165, 255)
 local PLAYER_TEXT_NAME = "PlayerInfo"
+local removePlayerText, ensurePlayerText, updatePlayerText
 
 local function getIsMonster(char)
     local val = char:GetAttribute("IsMonster")
@@ -10921,7 +10922,8 @@ local function ensureGenText(obj)
         genTextRefs[obj] = bb
     end
 end
-local function removePlayerText(char)
+
+function removePlayerText(char)
     local bb = playerTextRefs[char]
     if bb then
         bb:Destroy()
@@ -10929,7 +10931,7 @@ local function removePlayerText(char)
     end
 end
 
-local function ensurePlayerText(char)
+function ensurePlayerText(char)
     local bb = playerTextRefs[char]
     if not bb or bb.Parent ~= char then
         if bb then
@@ -10973,7 +10975,7 @@ local function ensurePlayerText(char)
     end
 end
 
-local function updatePlayerText(char)
+function updatePlayerText(char)
     local bb = playerTextRefs[char]
     if not bb then
         return
@@ -10994,6 +10996,7 @@ local function updatePlayerText(char)
         end
     end
 end
+
 local function updateGenerators()
     local genMaps = workspace:FindFirstChild("GenMaps")
     if not genMaps then
@@ -11140,6 +11143,7 @@ local function autoFixTick()
         remote:FireServer("skill", token, "great")
     end)
 end
+
 local mainTab = Window:Tab({
     Title = "主要功能",
     Icon = "hammer",
@@ -11238,6 +11242,7 @@ mainTab:Toggle({
 
 mainTab:Button({
     Title = "删除雾",
+    Desc = "每次进出潜艇都要重新点击/运行一遍删除雾和高亮功能",
     Callback = function()
         local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
         if sky then
