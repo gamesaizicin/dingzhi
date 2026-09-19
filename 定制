@@ -10692,6 +10692,609 @@ p.AttributeChanged:Connect(function(a)
 end)
 
 end
+local function cmdcz()
+Window:Divider()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local monsterESPEnabled = false
+local survivorESPEnabled = false
+local generatorESPEnabled = false
+local generatorProgressEnabled = false
+local staminaEnabled = false
+local autoFixEnabled = false
+local tpwalking = false
+local tpwalkSpeed = 10
+local OriginalHoldTimes = {}
+local promptConnection
+local heartbeatConnection
+
+local oldNamecall
+if hookmetamethod and getnamecallmethod then
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if staminaEnabled then
+            if method == "SetAttribute" then
+                local args = {...}
+                local attr = args[1]
+                if attr == "Stamina" or attr == "MAX" then
+                    if self == LocalPlayer or (LocalPlayer.Character and self == LocalPlayer.Character) then
+                        return oldNamecall(self, attr, 100)
+                    end
+                end
+            elseif method == "GetAttribute" then
+                local args = {...}
+                local attr = args[1]
+                if attr == "Stamina" or attr == "MAX" then
+                    if self == LocalPlayer or (LocalPlayer.Character and self == LocalPlayer.Character) then
+                        return 100
+                    end
+                end
+            end
+        end
+        if autoFixEnabled and method == "FireServer" then
+            if self and self.Name == "Generator" and self.Parent and self.Parent.Name == "Remotes" then
+                local args = {...}
+                if args[1] == "skill" and #args >= 3 then
+                    return oldNamecall(self, args[1], args[2], "great")
+                end
+            end
+        end
+        return oldNamecall(self, ...)
+    end)
+end
+
+local ESP_NAME = "PlayerESP"
+local GEN_ESP_NAME = "GeneratorESP"
+local GEN_TEXT_NAME = "GeneratorProgress"
+local GEN_COLOR = Color3.fromRGB(200, 165, 255)
+
+local function getIsMonster(char)
+    local val = char:GetAttribute("IsMonster")
+    if val == nil then
+        local plr = Players:GetPlayerFromCharacter(char)
+        if plr then
+            val = plr:GetAttribute("IsMonster")
+        end
+    end
+    return val == true
+end
+
+local function processPlayerESP(char)
+    if char == LocalPlayer.Character then
+        return
+    end
+
+    local isMonster = getIsMonster(char)
+    local shouldShow = false
+    local color = nil
+
+    if isMonster and monsterESPEnabled then
+        shouldShow = true
+        color = Color3.fromRGB(255, 0, 0)
+    elseif not isMonster and survivorESPEnabled then
+        shouldShow = true
+        color = Color3.fromRGB(0, 255, 0)
+    end
+
+    if not shouldShow then
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("Highlight") and child.Name == ESP_NAME then
+                child:Destroy()
+            end
+        end
+        return
+    end
+
+    local hl = nil
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Highlight") and child.Name == ESP_NAME then
+            hl = child
+        elseif child:IsA("Highlight") and child.Name ~= ESP_NAME then
+            child:Destroy()
+        end
+    end
+
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.Name = ESP_NAME
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillTransparency = 0.75
+        hl.OutlineTransparency = 0
+        hl.Adornee = char
+        hl.Parent = char
+    end
+
+    hl.FillColor = color
+    hl.OutlineColor = color
+end
+
+local function clearPlayerESP()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local char = plr.Character
+        if char then
+            for _, child in ipairs(char:GetChildren()) do
+                if child:IsA("Highlight") and child.Name == ESP_NAME then
+                    child:Destroy()
+                end
+            end
+        end
+    end
+end
+
+local function collectGenerators(root)
+    local out = {}
+    local stack = {root}
+    while #stack > 0 do
+        local node = stack[#stack]
+        stack[#stack] = nil
+        local kids = node:GetChildren()
+        for i = 1, #kids do
+            local child = kids[i]
+            if child.Name:sub(1, 9) == "Generator" then
+                out[#out + 1] = child
+            end
+            local cls = child.ClassName
+            if cls == "Model" or cls == "Folder" or cls == "BasePart" or cls == "MeshPart" or cls == "UnionOperation" then
+                stack[#stack + 1] = child
+            end
+        end
+    end
+    return out
+end
+
+local genHLRefs = setmetatable({}, {__mode = "k"})
+local genTextRefs = setmetatable({}, {__mode = "k"})
+
+local function removeGenHL(obj)
+    local hl = genHLRefs[obj]
+    if hl then
+        hl:Destroy()
+        genHLRefs[obj] = nil
+    end
+end
+
+local function removeGenText(obj)
+    local bb = genTextRefs[obj]
+    if bb then
+        bb:Destroy()
+        genTextRefs[obj] = nil
+    end
+end
+
+local function ensureGenHL(obj)
+    local hl = genHLRefs[obj]
+    if not hl or hl.Parent ~= obj then
+        if hl then
+            hl:Destroy()
+        end
+        hl = Instance.new("Highlight")
+        hl.Name = GEN_ESP_NAME
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillColor = GEN_COLOR
+        hl.OutlineColor = GEN_COLOR
+        hl.FillTransparency = 0.78
+        hl.OutlineTransparency = 0.1
+        hl.Adornee = obj
+        hl.Parent = obj
+        genHLRefs[obj] = hl
+    end
+end
+
+local function ensureGenText(obj)
+    local bb = genTextRefs[obj]
+    if not bb or bb.Parent ~= obj then
+        if bb then
+            bb:Destroy()
+        end
+        bb = Instance.new("BillboardGui")
+        bb.Name = GEN_TEXT_NAME
+        bb.Size = UDim2.new(0, 90, 0, 18)
+        bb.StudsOffset = Vector3.new(0, 3, 0)
+        bb.AlwaysOnTop = true
+        bb.LightInfluence = 0
+        bb.Adornee = obj
+        bb.Parent = obj
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Name = "ProgressLabel"
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.TextColor3 = GEN_COLOR
+        lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        lbl.TextStrokeTransparency = 0.3
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 12
+        lbl.Text = ""
+        lbl.Parent = bb
+
+        genTextRefs[obj] = bb
+    end
+end
+
+local function updateGenerators()
+    local genMaps = workspace:FindFirstChild("GenMaps")
+    if not genMaps then
+        return
+    end
+
+    local found = collectGenerators(genMaps)
+    local seenHL = {}
+    local seenText = {}
+
+    for i = 1, #found do
+        local obj = found[i]
+        local progress = tonumber(obj:GetAttribute("Progress")) or 0
+        local completed = math.floor(progress) >= 100
+
+        if generatorESPEnabled and not completed then
+            seenHL[obj] = true
+            ensureGenHL(obj)
+        else
+            removeGenHL(obj)
+        end
+
+        if generatorProgressEnabled then
+            seenText[obj] = true
+            ensureGenText(obj)
+            local bb = genTextRefs[obj]
+            if bb then
+                local lbl = bb:FindFirstChild("ProgressLabel")
+                if lbl then
+                    lbl.Text = "进度：" .. tostring(math.floor(progress))
+                end
+            end
+        else
+            removeGenText(obj)
+        end
+    end
+
+    for obj in pairs(genHLRefs) do
+        if not seenHL[obj] or not obj.Parent then
+            removeGenHL(obj)
+        end
+    end
+    for obj in pairs(genTextRefs) do
+        if not seenText[obj] or not obj.Parent then
+            removeGenText(obj)
+        end
+    end
+end
+
+local function restoreStamina()
+    local char = LocalPlayer.Character
+    local targets = {LocalPlayer}
+    if char then
+        table.insert(targets, char)
+    end
+    for _, obj in ipairs(targets) do
+        pcall(function()
+            obj:SetAttribute("InfiniteStamina", nil)
+            obj:SetAttribute("ENABLED", nil)
+            obj:SetAttribute("CanSprint", nil)
+        end)
+    end
+end
+
+local function applyStamina()
+    local char = LocalPlayer.Character
+    local targets = {LocalPlayer}
+    if char then
+        table.insert(targets, char)
+    end
+    for _, obj in ipairs(targets) do
+        pcall(function()
+            obj:SetAttribute("Stamina", 100)
+            obj:SetAttribute("MAX", 100)
+            obj:SetAttribute("InfiniteStamina", true)
+            obj:SetAttribute("ENABLED", true)
+            obj:SetAttribute("CanSprint", true)
+        end)
+    end
+end
+
+local GeneratorRemote
+local function getGeneratorRemote()
+    if GeneratorRemote and GeneratorRemote.Parent then
+        return GeneratorRemote
+    end
+    local remotes = RS:FindFirstChild("Remotes")
+    if remotes then
+        GeneratorRemote = remotes:FindFirstChild("Generator")
+    end
+    return GeneratorRemote
+end
+
+local function readToken(sc)
+    if not sc then
+        return nil
+    end
+    local names = {"token", "Token", "TOKEN", "currentToken", "CurrentToken"}
+    for _, n in ipairs(names) do
+        local v = sc:GetAttribute(n)
+        if v ~= nil then
+            return v
+        end
+    end
+    for _, d in ipairs(sc:GetDescendants()) do
+        if d:IsA("ValueBase") and d.Name:lower():find("token") then
+            return d.Value
+        end
+    end
+    return nil
+end
+
+local function findSkillCheck()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then
+        return nil
+    end
+    local sc = pg:FindFirstChild("SkillCheck")
+    if sc then
+        return sc
+    end
+    for _, d in ipairs(pg:GetChildren()) do
+        if d.Name:lower():find("skill") and d:IsA("GuiObject") then
+            return d
+        end
+    end
+    return nil
+end
+
+local function autoFixTick()
+    local sc = findSkillCheck()
+    if not sc or not sc.Visible then
+        return
+    end
+    local token = readToken(sc)
+    if token == nil then
+        return
+    end
+    local remote = getGeneratorRemote()
+    if not remote then
+        return
+    end
+    pcall(function()
+        remote:FireServer("skill", token, "great")
+    end)
+end
+local mainTab = Window:Tab({
+    Title = "主要功能",
+    Icon = "hammer",
+    Locked = false,
+})
+
+local espTab = Window:Tab({
+    Title = "透视类",
+    Icon = "eye",
+    Locked = false,
+})
+
+local autoTab = Window:Tab({
+    Title = "自动类",
+    Icon = "tractor",
+    Locked = false,
+})
+
+mainTab:Toggle({
+    Title = "速度",
+    Desc = "游戏有速度检测 所以微调就行了",
+    Value = false,
+    Callback = function(state)
+        tpwalking = state
+        if state then
+            spawn(function()
+                while tpwalking do
+                    local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local hrp = chr:FindFirstChild("HumanoidRootPart")
+                    local hum = chr:FindFirstChildWhichIsA("Humanoid")
+                    local delta = RunService.Heartbeat:Wait()
+                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * tpwalkSpeed * delta)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+mainTab:Slider({
+    Title = "速度调节",
+    Value = {
+        Min = 0,
+        Max = 100,
+        Default = tpwalkSpeed,
+    },
+    Callback = function(value)
+        tpwalkSpeed = value
+    end
+})
+
+mainTab:Toggle({
+    Title = "秒互动",
+    Value = false,
+    Callback = function(state)
+        if state then
+            for _, prompt in pairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") then
+                    if not OriginalHoldTimes[prompt] then
+                        OriginalHoldTimes[prompt] = prompt.HoldDuration
+                    end
+                    prompt.HoldDuration = 0
+                end
+            end
+            promptConnection = workspace.DescendantAdded:Connect(function(obj)
+                if obj:IsA("ProximityPrompt") then
+                    if not OriginalHoldTimes[obj] then
+                        OriginalHoldTimes[obj] = obj.HoldDuration
+                    end
+                    obj.HoldDuration = 0
+                end
+            end)
+            heartbeatConnection = RunService.Heartbeat:Connect(function()
+                for prompt, original in pairs(OriginalHoldTimes) do
+                    if prompt and prompt.Parent then
+                        prompt.HoldDuration = 0
+                    end
+                end
+            end)
+        else
+            if promptConnection then
+                promptConnection:Disconnect()
+            end
+            if heartbeatConnection then
+                heartbeatConnection:Disconnect()
+            end
+            for prompt, original in pairs(OriginalHoldTimes) do
+                if prompt and prompt.Parent then
+                    prompt.HoldDuration = original
+                end
+            end
+        end
+    end
+})
+
+mainTab:Button({
+    Title = "删除雾",
+    Callback = function()
+        local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
+        if sky then
+            sky:Destroy()
+        end
+    end,
+})
+
+mainTab:Toggle({
+    Title = "地图高亮",
+    Value = false,
+    Callback = function(state)
+        local Lighting = game:GetService("Lighting")
+        if state then
+            Lighting.Brightness = 5
+            Lighting.Ambient = Color3.fromRGB(160, 160, 160)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+        else
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(70, 70, 70)
+            Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        end
+    end,
+})
+
+mainTab:Toggle({
+    Title = "无限体力",
+    Value = false,
+    Callback = function(state)
+        staminaEnabled = state
+        if not state then
+            restoreStamina()
+        end
+    end,
+})
+
+espTab:Toggle({
+    Title = "杀手透视",
+    Value = false,
+    Callback = function(state)
+        monsterESPEnabled = state
+        if not state and not survivorESPEnabled then
+            clearPlayerESP()
+        end
+    end,
+})
+
+espTab:Toggle({
+    Title = "幸存者透视",
+    Value = false,
+    Callback = function(state)
+        survivorESPEnabled = state
+        if not state and not monsterESPEnabled then
+            clearPlayerESP()
+        end
+    end,
+})
+
+espTab:Toggle({
+    Title = "发电机透视",
+    Value = false,
+    Callback = function(state)
+        generatorESPEnabled = state
+        if not state then
+            for obj in pairs(genHLRefs) do
+                removeGenHL(obj)
+            end
+        end
+    end,
+})
+
+espTab:Toggle({
+    Title = "发电机进度",
+    Value = false,
+    Callback = function(state)
+        generatorProgressEnabled = state
+        if not state then
+            for obj in pairs(genTextRefs) do
+                removeGenText(obj)
+            end
+        end
+    end,
+})
+
+autoTab:Toggle({
+    Title = "自动修机",
+    Value = false,
+    Callback = function(state)
+        autoFixEnabled = state
+    end,
+})
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if staminaEnabled then
+        applyStamina()
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if staminaEnabled then
+            applyStamina()
+        end
+        if monsterESPEnabled or survivorESPEnabled then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    local char = plr.Character
+                    if char then
+                        processPlayerESP(char)
+                    end
+                end
+            end
+        end
+        task.wait(0.15)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if generatorESPEnabled or generatorProgressEnabled then
+            updateGenerators()
+        end
+        task.wait(0.4)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if autoFixEnabled then
+            autoFixTick()
+        end
+        task.wait(0.03)
+    end
+end)
+end
 local Tab = Window:Tab({  
     Title = "游戏选择",  
     Icon = "house",  
@@ -10726,7 +11329,8 @@ local game_functions = {
     [131403226200723] = eye,
     [81156978660382] = night,
     [127506026273368] = baoheqianshui,
-    [90521763301609] = shufu
+    [90521763301609] = shufu,
+    [79301883261704] = cmdcz
 }
 
 local function check_game()
@@ -10850,5 +11454,11 @@ Tab:Button({
     Title = "被荒凉所束缚",
     Callback = function()
     shufu()
+    end
+})
+Tab:Button({
+    Title = "沉默的存在",
+    Callback = function()
+    cmdcz()
     end
 })
