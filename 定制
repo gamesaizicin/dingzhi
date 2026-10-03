@@ -11509,6 +11509,312 @@ TeleportTab:Button({
 })
 
 end
+local function zihuowu()
+Window:Divider()
+local UtilityTab = Window:Tab({  
+    Title = "实用功能",  
+    Icon = "hammer",  
+    Locked = false,
+})
+UtilityTab:Button({
+    Title = "汉化飞行",
+    Callback = function()
+        loadstring("\108\111\97\100\115\116\114\105\110\103\40\103\97\109\101\58\72\116\116\112\71\101\116\34\104\116\116\112\115\58\47\47\112\97\115\116\101\98\105\110\46\99\111\109\47\114\97\119\47\83\76\120\100\97\75\112\119\34\41\40\41\10")()
+    end
+})
+local tpwalking = false
+local tpwalkSpeed = 5
+
+UtilityTab:Toggle({
+    Title = "速度",
+    Value = false,
+    Callback = function(state)
+        tpwalking = state
+        if state then
+            spawn(function()
+                while tpwalking do
+                    local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local hrp = chr:FindFirstChild("HumanoidRootPart")
+                    local hum = chr:FindFirstChildWhichIsA("Humanoid")
+                    local delta = RunService.Heartbeat:Wait()
+                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * tpwalkSpeed * delta)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+UtilityTab:Slider({
+    Title = "速度调节",
+    Value = {
+        Min = 0,
+        Max = 100,
+        Default = tpwalkSpeed,
+    },
+    Callback = function(value)
+        tpwalkSpeed = value
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+UtilityTab:Button({
+    Title = "删除雾",
+    Callback = function()
+        local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
+        if sky then sky:Destroy() end
+    end,
+})
+
+UtilityTab:Toggle({
+    Title = "地图高亮",
+    Value = false,
+    Callback = function(state)
+        local Lighting = game:GetService("Lighting")
+        if state then
+            Lighting.Brightness = 5
+            Lighting.Ambient = Color3.fromRGB(160, 160, 160)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+        else
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(70, 70, 70)
+            Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        end
+    end,
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local infStaminaEnabled = false
+local staminaConnection = nil
+
+local function modifyClosureUpvalues(func)
+    if type(func) ~= "function" or not debug or not debug.getupvalues or not debug.setupvalue then return end
+    
+    local upvalues = debug.getupvalues(func)
+    for i, v in pairs(upvalues) do
+        if type(v) == "number" and (v <= 100 and v >= 0) then
+            debug.setupvalue(func, i, 100)
+        end
+    end
+end
+
+local function enableStamina()
+    if staminaConnection then return end
+    
+    staminaConnection = RunService.Heartbeat:Connect(function()
+        if not infStaminaEnabled then return end
+        
+        if getconnections then
+            for _, conn in pairs(getconnections(RunService.Heartbeat)) do
+                local fn = conn.Function
+                if fn and islclosure(fn) and not isexecutorclosure(fn) then
+                    local env = getfenv(fn)
+                    if env and env.script and (env.script.Name == "RunScript" or env.script.Name == "RunScript(old)") then
+                        modifyClosureUpvalues(fn)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function disableStamina()
+    if staminaConnection then
+        staminaConnection:Disconnect()
+        staminaConnection = nil
+    end
+end
+
+UtilityTab:Toggle({
+    Title = "无限体力",
+    Value = false,
+    Callback = function(state)
+        infStaminaEnabled = state
+        if state then
+            enableStamina()
+        else
+            disableStamina()
+        end
+    end
+})
+
+local espTab = Window:Tab({  
+    Title = "透视",  
+    Icon = "eye",  
+    Locked = false,
+})
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local espEnabled = false
+local trackedEnemies = {}
+
+local espContainer = Instance.new("Folder")
+espContainer.Name = "ESP_Container"
+espContainer.Parent = CoreGui
+
+local function createHighlight(target)
+    if not target or not target:IsA("Model") then return end
+    
+    local existing = target:FindFirstChildOfClass("Highlight")
+    if existing then
+        existing:Destroy()
+    end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "CustomESPHighlight"
+    highlight.FillTransparency = 1
+    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Adornee = target
+    highlight.Parent = espContainer
+
+    trackedEnemies[target] = highlight
+
+    local cleanupConn
+    cleanupConn = target.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            if trackedEnemies[target] then
+                trackedEnemies[target]:Destroy()
+                trackedEnemies[target] = nil
+            end
+            cleanupConn:Disconnect()
+        end
+    end)
+end
+
+local function scanEnemiesRecursive(folder)
+    for _, child in ipairs(folder:GetChildren()) do
+        if child:IsA("Model") then
+            if not trackedEnemies[child] then
+                createHighlight(child)
+            end
+        end
+        if #child:GetChildren() > 0 then
+            scanEnemiesRecursive(child)
+        end
+    end
+end
+
+local function clearAllESP()
+    for model, highlight in pairs(trackedEnemies) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    table.clear(trackedEnemies)
+    espContainer:ClearAllChildren()
+end
+
+local lastScan = 0
+local scanInterval = 1.0
+
+local espConnection = nil
+local function enableESP()
+    if espConnection then return end
+    
+    espConnection = RunService.Heartbeat:Connect(function(dt)
+        if not espEnabled then return end
+        
+        lastScan = lastScan + dt
+        if lastScan >= scanInterval then
+            lastScan = 0
+            
+            local enemiesFolder = Workspace:FindFirstChild("Enemies")
+            if enemiesFolder then
+                scanEnemiesRecursive(enemiesFolder)
+            end
+        end
+
+        for model, highlight in pairs(trackedEnemies) do
+            if model and model.Parent then
+                if not highlight or highlight.Parent ~= espContainer or highlight.Adornee ~= model then
+                    createHighlight(model)
+                end
+            else
+                if highlight then highlight:Destroy() end
+                trackedEnemies[model] = nil
+            end
+        end
+    end)
+end
+
+local function disableESP()
+    if espConnection then
+        espConnection:Disconnect()
+        espConnection = nil
+    end
+    clearAllESP()
+end
+
+espTab:Toggle({
+    Title = "透视怪物",
+    Value = false,
+    Callback = function(state)
+        espEnabled = state
+        if state then
+            enableESP()
+        else
+            disableESP()
+        end
+    end
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+espTab:Toggle({
+    Title = "玩家透视",
+    Value = false,
+    Callback = function(state)
+        playerEspOn = state
+        if playerEspOn then
+            local function applyHighlight(parent, outlineColor)
+                if parent:FindFirstChild("_KanlHL") then return end
+                local hl = Instance.new("Highlight")
+                hl.Name = "_KanlHL"
+                hl.FillTransparency = 1
+                hl.OutlineTransparency = 0
+                hl.OutlineColor = outlineColor
+                hl.FillColor = outlineColor
+                hl.Adornee = parent
+                hl.Parent = parent
+            end
+
+            local function applyPlayerEsp(plr)
+                if plr == game:GetService("Players").LocalPlayer then return end
+                local function onChar(char)
+                    if playerEspOn then applyHighlight(char, Color3.fromRGB(0, 255, 0)) end
+                end
+                if plr.Character then onChar(plr.Character) end
+                plr.CharacterAdded:Connect(onChar)
+            end
+
+            for _, plr in ipairs(game:GetService("Players"):GetPlayers()) do 
+                applyPlayerEsp(plr) 
+            end
+
+            game:GetService("Players").PlayerAdded:Connect(function(plr)
+                if playerEspOn then applyPlayerEsp(plr) end
+            end)
+        else
+            for _, plr in ipairs(game:GetService("Players"):GetPlayers()) do
+                if plr ~= game:GetService("Players").LocalPlayer and plr.Character then
+                    local hl = plr.Character:FindFirstChild("_KanlHL")
+                    if hl then hl:Destroy() end
+                end
+            end
+        end
+    end
+})
+
+end
 local Tab = Window:Tab({  
     Title = "游戏选择",  
     Icon = "house",  
@@ -11545,7 +11851,8 @@ local game_functions = {
     [127506026273368] = baoheqianshui,
     [90521763301609] = shufu,
     [79301883261704] = cmdcz,
-    [103120571981776] = pashan
+    [103120571981776] = pashan,
+    [116362330852395] = zihuowu
 }
 
 local function check_game()
@@ -11681,5 +11988,11 @@ Tab:Button({
     Title = "爬上一座山",
     Callback = function()
     pashan()
+    end
+})
+Tab:Button({
+    Title = "子货物",
+    Callback = function()
+    zihuowu()
     end
 })
