@@ -11380,6 +11380,84 @@ task.spawn(function()
     end
 end)
 end
+local function pashan()
+Window:Divider()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local UtilityTab = Window:Tab({  
+    Title = "实用功能",  
+    Icon = "hammer",  
+    Locked = false,
+})
+
+local TeleportTab = Window:Tab({  
+    Title = "传送",  
+    Icon = "zap",  
+    Locked = false,
+})
+UtilityTab:Button({
+    Title = "汉化飞行",
+    Callback = function()
+        loadstring("\108\111\97\100\115\116\114\105\110\103\40\103\97\109\101\58\72\116\116\112\71\101\116\34\104\116\116\112\115\58\47\47\112\97\115\116\101\98\105\110\46\99\111\109\47\114\97\119\47\83\76\120\100\97\75\112\119\34\41\40\41\10")()
+    end
+})
+local tpwalking = false
+local tpwalkSpeed = 5
+
+UtilityTab:Toggle({
+    Title = "速度",
+    Value = false,
+    Callback = function(state)
+        tpwalking = state
+        if state then
+            spawn(function()
+                while tpwalking do
+                    local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local hrp = chr:FindFirstChild("HumanoidRootPart")
+                    local hum = chr:FindFirstChildWhichIsA("Humanoid")
+                    local delta = RunService.Heartbeat:Wait()
+                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * tpwalkSpeed * delta)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+UtilityTab:Slider({
+    Title = "速度调节",
+    Value = {
+        Min = 0,
+        Max = 100,
+        Default = tpwalkSpeed,
+    },
+    Callback = function(value)
+        tpwalkSpeed = value
+    end
+})
+
+TeleportTab:Button({
+    Title = "普通传送登顶",
+    Callback = function()
+        local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = chr:WaitForChild("HumanoidRootPart")
+        hrp.CFrame = CFrame.new(29.91, 1655.69, -19.72)
+    end
+})
+
+TeleportTab:Button({
+    Title = "困难模式登顶",
+    Callback = function()
+        local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = chr:WaitForChild("HumanoidRootPart")
+        hrp.CFrame = CFrame.new(-19.37, 2649.49, 0.27)
+    end
+})
+
+end
 local Tab = Window:Tab({  
     Title = "游戏选择",  
     Icon = "house",  
@@ -11415,7 +11493,8 @@ local game_functions = {
     [81156978660382] = night,
     [127506026273368] = baoheqianshui,
     [90521763301609] = shufu,
-    [79301883261704] = cmdcz
+    [79301883261704] = cmdcz,
+    [103120571981776] = pashan
 }
 
 local function check_game()
@@ -11545,5 +11624,11 @@ Tab:Button({
     Title = "沉默的存在",
     Callback = function()
     cmdcz()
+    end
+})
+Tab:Button({
+    Title = "爬上一座山",
+    Callback = function()
+    pashan()
     end
 })
