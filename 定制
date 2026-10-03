@@ -11438,9 +11438,60 @@ UtilityTab:Slider({
         tpwalkSpeed = value
     end
 })
+local jumpPower = 50
 
+UtilityTab:Slider({
+    Title = "跳跃高度",
+    Value = {
+        Min = 0,
+        Max = 500,
+        Default = jumpPower,
+    },
+    Callback = function(value)
+        jumpPower = value
+        local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hum = chr:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.UseJumpPower = true
+            hum.JumpPower = jumpPower
+        end
+    end
+})
+
+LocalPlayer.CharacterAdded:Connect(function(chr)
+    local hum = chr:WaitForChild("Humanoid")
+    hum.UseJumpPower = true
+    hum.JumpPower = jumpPower
+end)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+UtilityTab:Button({
+    Title = "删除雾",
+    Callback = function()
+        local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
+        if sky then sky:Destroy() end
+    end,
+})
+
+UtilityTab:Toggle({
+    Title = "地图高亮",
+    Value = false,
+    Callback = function(state)
+        local Lighting = game:GetService("Lighting")
+        if state then
+            Lighting.Brightness = 5
+            Lighting.Ambient = Color3.fromRGB(160, 160, 160)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+        else
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(70, 70, 70)
+            Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        end
+    end,
+})
 TeleportTab:Button({
-    Title = "普通传送登顶",
+    Title = "普通模式传送登顶",
     Callback = function()
         local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
         local hrp = chr:WaitForChild("HumanoidRootPart")
