@@ -7772,7 +7772,22 @@ local targets = {
     ["LeviathanSlender"] = true,
     ["LeviathanSmall"] = true,
     ["TestLeviathan"] = true,
-    ["Theodore"] = true
+    ["Theodore"] = true,
+    ["BendyLeviathan"] = true,
+    ["BigBendyLeviathan"] = true,
+    ["GrannyLeviathan"] = true,
+    ["JeffLeviathan"] = true,
+    ["JeffLeviathanTEST"] = true,
+    ["JellyfishLeviathanBlue"] = true,
+    ["JellyfishLeviathanPink"] = true,
+    ["JellyfishLeviathanTest"] = true,
+    ["PoppyLeviathan"] = true,
+    ["Skewer Leviathan"] = true,
+    ["SlenderLeviathan"] = true,
+    ["SmallGrannyLeviathan"] = true,
+    ["Theodore Model"] = true,
+    ["Theodore Model TEST"] = true,
+    ["baldi leviathan"] = true,
 }
 
 local function getEntityPosition(object)
@@ -8028,16 +8043,31 @@ Tab:Toggle({
 
         if state then
             local targets = {
-                ["Jeff"] = true,
-                ["LeviathanBaldi"] = true,
-                ["LeviathanBig"] = true,
-                ["LeviathanGranny"] = true,
-                ["LeviathanGrannySmall"] = true,
-                ["LeviathanSlender"] = true,
-                ["LeviathanSmall"] = true,
-                ["TestLeviathan"] = true,
-                ["Theodore"] = true
-            }
+    ["Jeff"] = true,
+    ["LeviathanBaldi"] = true,
+    ["LeviathanBig"] = true,
+    ["LeviathanGranny"] = true,
+    ["LeviathanGrannySmall"] = true,
+    ["LeviathanSlender"] = true,
+    ["LeviathanSmall"] = true,
+    ["TestLeviathan"] = true,
+    ["Theodore"] = true,
+    ["BendyLeviathan"] = true,
+    ["BigBendyLeviathan"] = true,
+    ["GrannyLeviathan"] = true,
+    ["JeffLeviathan"] = true,
+    ["JeffLeviathanTEST"] = true,
+    ["JellyfishLeviathanBlue"] = true,
+    ["JellyfishLeviathanPink"] = true,
+    ["JellyfishLeviathanTest"] = true,
+    ["PoppyLeviathan"] = true,
+    ["Skewer Leviathan"] = true,
+    ["SlenderLeviathan"] = true,
+    ["SmallGrannyLeviathan"] = true,
+    ["Theodore Model"] = true,
+    ["Theodore Model TEST"] = true,
+    ["baldi leviathan"] = true,
+}
 
             local plr = game:GetService("Players").LocalPlayer
 
