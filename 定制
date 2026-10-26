@@ -13958,7 +13958,7 @@ end
 local function refreshHookCache()
     for k in pairs(hookCache) do hookCache[k] = nil end
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if (obj:IsA("Model") or obj:IsA("BasePart")) and string.find(string.lower(obj.Name), "hook", 1, true) then
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name == "Hook" then
             hookCache[obj] = true
         end
     end
@@ -14003,15 +14003,15 @@ local function ensureWindowListener()
     if windowListenerInstalled then return end
     windowListenerInstalled = true
     Workspace.DescendantAdded:Connect(function(obj)
-        if not espWindowOn and not espHookOn then return end
-        local lower = string.lower(obj.Name)
-        if string.find(lower, "window", 1, true) or lower == "inviswall" then
-            windowScanDirty = true
-        end
-        if string.find(lower, "hook", 1, true) then
-            hookScanDirty = true
-        end
-    end)
+    if not espWindowOn and not espHookOn then return end
+    local lower = string.lower(obj.Name)
+    if string.find(lower, "window", 1, true) or lower == "inviswall" then
+        windowScanDirty = true
+    end
+    if obj.Name == "Hook" then
+        hookScanDirty = true
+    end
+end)
     Workspace.DescendantRemoving:Connect(function(obj)
         if windowCache[obj] then windowCache[obj] = nil end
         if hookCache[obj] then hookCache[obj] = nil end
