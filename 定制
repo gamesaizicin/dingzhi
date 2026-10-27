@@ -11847,6 +11847,8 @@ espTab:Toggle({
 end
 local function baoliqu()
 Window:Divider()
+local T = {}
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11861,106 +11863,154 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local remotes = ReplicatedStorage:WaitForChild("Remotes")
-local generatorRemotes = remotes:WaitForChild("Generator")
-local skillCheckEvent = generatorRemotes:WaitForChild("SkillCheckEvent")
-local skillCheckResultEvent = generatorRemotes:WaitForChild("SkillCheckResultEvent")
-local butcherRemotes = remotes:WaitForChild("Killers"):WaitForChild("Butcher")
-local disarmEvent = butcherRemotes:WaitForChild("DisarmTrap")
-local trapDisarmSightMod = require(ReplicatedStorage.Modules.Killers.Butcher.TrapDisarmSight)
-local canReachTrap = trapDisarmSightMod.CanReach
+T.remotes = ReplicatedStorage:FindFirstChild("Remotes")
+if not T.remotes then
+    task.spawn(function()
+        T.remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
+    end)
+end
 
-local fallEvent = nil
-local destroyGlobalEvent = nil
-local palletBreakCommitEvent = nil
-local palletBreakMarkerEvent = nil
-local breakGenEvent = nil
-local breakGenCommitEvent = nil
-local breakGenMarkerEvent = nil
+local generatorRemotes = T.remotes and T.remotes:FindFirstChild("Generator")
+T.skillCheckEvent = generatorRemotes and generatorRemotes:FindFirstChild("SkillCheckEvent")
+T.skillCheckResultEvent = generatorRemotes and generatorRemotes:FindFirstChild("SkillCheckResultEvent")
+local butcherFolder = T.remotes and T.remotes:FindFirstChild("Killers")
+local butcherRemotes = butcherFolder and butcherFolder:FindFirstChild("Butcher")
+T.disarmEvent = butcherRemotes and butcherRemotes:FindFirstChild("DisarmTrap")
+
+local trapDisarmSightMod = nil
+T.canReachTrap = function() return true end
 pcall(function()
-    local mech = remotes:FindFirstChild("Mechanics")
-    if mech then fallEvent = mech:FindFirstChild("Fall") end
-    local pal = remotes:FindFirstChild("Pallet")
+    local mods = ReplicatedStorage:FindFirstChild("Modules")
+    local killers = mods and mods:FindFirstChild("Killers")
+    local butcher = killers and killers:FindFirstChild("Butcher")
+    local trapMod = butcher and butcher:FindFirstChild("TrapDisarmSight")
+    if trapMod then
+        trapDisarmSightMod = require(trapMod)
+        if type(trapDisarmSightMod) == "table" and type(trapDisarmSightMod.CanReach) == "function" then
+            T.canReachTrap = trapDisarmSightMod.CanReach
+        end
+    end
+end)
+
+T.fallEvent = nil
+T.destroyGlobalEvent = nil
+T.palletBreakCommitEvent = nil
+T.palletBreakMarkerEvent = nil
+T.breakGenEvent = nil
+T.breakGenCommitEvent = nil
+T.breakGenMarkerEvent = nil
+pcall(function()
+    if not T.remotes then return end
+    local mech = T.remotes:FindFirstChild("Mechanics")
+    if mech then T.fallEvent = mech:FindFirstChild("Fall") end
+    local pal = T.remotes:FindFirstChild("Pallet")
     if pal then
         local jason = pal:FindFirstChild("Jason")
         if jason then
-            destroyGlobalEvent = jason:FindFirstChild("Destroy-Global")
-            palletBreakCommitEvent = jason:FindFirstChild("PalletBreakCommit")
-            palletBreakMarkerEvent = jason:FindFirstChild("PalletBreakMarker")
+            T.destroyGlobalEvent = jason:FindFirstChild("Destroy-Global")
+            T.palletBreakCommitEvent = jason:FindFirstChild("PalletBreakCommit")
+            T.palletBreakMarkerEvent = jason:FindFirstChild("PalletBreakMarker")
         end
     end
-    local genRem = remotes:FindFirstChild("Generator")
+    local genRem = T.remotes:FindFirstChild("Generator")
     if genRem then
-        breakGenEvent = genRem:FindFirstChild("BreakGenEvent")
-        breakGenCommitEvent = genRem:FindFirstChild("BreakGenCommit")
-        breakGenMarkerEvent = genRem:FindFirstChild("BreakGenMarker")
+        T.breakGenEvent = genRem:FindFirstChild("BreakGenEvent")
+        T.breakGenCommitEvent = genRem:FindFirstChild("BreakGenCommit")
+        T.breakGenMarkerEvent = genRem:FindFirstChild("BreakGenMarker")
     end
 end)
 
-local SurvivorActions = nil
+T.SurvivorActions = nil
 pcall(function()
-    SurvivorActions = require(ReplicatedStorage.Modules.Survivors.SurvivorActions)
+    T.SurvivorActions = require(ReplicatedStorage.Modules.Survivors.SurvivorActions)
 end)
-if type(SurvivorActions) ~= "table" or type(SurvivorActions.startPalletDrop) ~= "function" then
-    SurvivorActions = nil
+if type(T.SurvivorActions) ~= "table" or type(T.SurvivorActions.startPalletDrop) ~= "function" then
+    T.SurvivorActions = nil
 end
 
-local running = false
-local espGeneratorOn = false
-local espProgressOn = false
-local espKillerOn = false
-local espSurvivorOn = false
-local espPalletOn = false
-local espWindowOn = false
-local espHookOn = false
-local autoPalletDropOn = false
-local fallBlockOn = false
-local autoBreakPalletOn = false
-local autoKickGenOn = false
-local alertEnabled = false
-local alertSoundEnabled = false
-local alertRadius = 50
-local genColor = Color3.fromRGB(200, 150, 255)
-local survColor = Color3.fromRGB(90, 230, 130)
-local killerColor = Color3.fromRGB(255, 70, 70)
-local palletColor = Color3.fromRGB(255, 210, 60)
-local windowColor = Color3.fromRGB(150, 255, 200)
-local hookColor = Color3.fromRGB(255, 50, 50)
-local progressColor = Color3.fromRGB(200, 150, 255)
-local pending = nil
-local firedCount = 0
-local monitorRunning = false
-local pendingTime = 0
-local clickModeSupported = type(getconnections) == "function"
-local autoDisarmOn = false
-local autoQTEOn = false
-local trapImmuneOn = false
-local espTrapOn = false
-local trapESPColor = Color3.fromRGB(139, 0, 0)
-local trapESPFillTransparency = 0.55
+T.espGenNameOn = false
+T.espKillerNameOn = false
+T.espSurvivorNameOn = false
+T.espPalletNameOn = false
+T.espWindowNameOn = false
+T.espHookNameOn = false
+T.espTrapNameOn = false
+T.espPumpkinNameOn = false
+T.espPumpkinOn = false
+T.lastMainUpdate = 0
+T.lastMapUpdate = 0
+T.lastWindowUpdate = 0
+_G._AutoHUD_Name = _G._AutoHUD_Name or { ensure = nil }
+_G._AutoHUD_Dist = _G._AutoHUD_Dist or {
+    gen = false,
+    killer = false,
+    survivor = false,
+    pallet = false,
+    window = false,
+    hook = false,
+    trap = false,
+    pumpkin = false,
+}
+_G._AutoHUD_Pumpkin = _G._AutoHUD_Pumpkin or {
+    color = Color3.fromRGB(180, 130, 0),
+    cache = setmetatable({}, {__mode = "k"}),
+}
 
-local disarming = false
-local disarmToken = 0
-local disarmCooldownUntil = 0
-local activeDisarmTrack = nil
+T.running = false
+T.espGeneratorOn = false
+T.espProgressOn = false
+T.espKillerOn = false
+T.espSurvivorOn = false
+T.espPalletOn = false
+T.espWindowOn = false
+T.espHookOn = false
+T.autoPalletDropOn = false
+T.fallBlockOn = false
+T.autoBreakPalletOn = false
+T.autoKickGenOn = false
+T.alertEnabled = false
+T.alertSoundEnabled = false
+T.alertRadius = 50
+T.genColor = Color3.fromRGB(200, 150, 255)
+T.survColor = Color3.fromRGB(90, 230, 130)
+T.killerColor = Color3.fromRGB(255, 70, 70)
+T.palletColor = Color3.fromRGB(255, 210, 60)
+T.windowColor = Color3.fromRGB(150, 255, 200)
+T.hookColor = Color3.fromRGB(255, 50, 50)
+T.progressColor = Color3.fromRGB(200, 150, 255)
+T.pending = nil
+T.firedCount = 0
+T.monitorRunning = false
+T.pendingTime = 0
+T.clickModeSupported = type(getconnections) == "function"
+T.autoDisarmOn = false
+T.autoQTEOn = false
+T.trapImmuneOn = false
+T.espTrapOn = false
+T.trapESPColor = Color3.fromRGB(139, 0, 0)
+T.trapESPFillTransparency = 0.55
 
-local qteFired = false
-local qteLastTargetRot = nil
-local qteLastPress = 0
-local qtePrevRot = 0
-local qtePrevTime = 0
+T.disarming = false
+T.disarmToken = 0
+T.disarmCooldownUntil = 0
+T.activeDisarmTrack = nil
 
-local trapHighlightCache = setmetatable({}, {__mode = "k"})
+T.qteFired = false
+T.qteLastTargetRot = nil
+T.qteLastPress = 0
+T.qtePrevRot = 0
+T.qtePrevTime = 0
 
-local knownGenerators = setmetatable({}, {__mode = "k"})
-local activeVisuals = setmetatable({}, {__mode = "k"})
-local proxInst = nil
-local proxChar = nil
-local lastPalletDropTime = 0
-local lastBreakPalletTime = 0
-local lastKickGenTime = 0
-local lastFullScan = -math.huge
-local lastGlobalScan = -math.huge
+T.trapHighlightCache = setmetatable({}, {__mode = "k"})
+T.knownGenerators = setmetatable({}, {__mode = "k"})
+T.activeVisuals = setmetatable({}, {__mode = "k"})
+T.proxInst = nil
+T.proxChar = nil
+T.lastPalletDropTime = 0
+T.lastBreakPalletTime = 0
+T.lastKickGenTime = 0
+T.lastFullScan = -math.huge
+T.lastGlobalScan = -math.huge
 
 local GEN_HL = "_AutoHUD_GenHL"
 local KILLER_HL = "_AutoHUD_KillerHL"
@@ -11975,37 +12025,23 @@ local GLOBAL_SCAN_INTERVAL = 10
 
 local function purgeByName(name)
     local destroyed = setmetatable({}, {__mode = "k"})
-
     local function destroyVisual(obj)
         if not obj or destroyed[obj] then return end
         if obj.Name ~= name then return end
         if obj:GetAttribute("_AutoHUD") ~= true then return end
-
         destroyed[obj] = true
-        activeVisuals[obj] = nil
-
-        pcall(function()
-            obj:Destroy()
-        end)
+        T.activeVisuals[obj] = nil
+        pcall(function() obj:Destroy() end)
     end
-
-    for obj in pairs(activeVisuals) do
-        destroyVisual(obj)
-    end
-
+    for obj in pairs(T.activeVisuals) do destroyVisual(obj) end
     pcall(function()
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            destroyVisual(obj)
-        end
+        for _, obj in ipairs(Workspace:GetDescendants()) do destroyVisual(obj) end
     end)
-
     pcall(function()
         for _, player in ipairs(Players:GetPlayers()) do
             local char = player.Character
             if char then
-                for _, obj in ipairs(char:GetDescendants()) do
-                    destroyVisual(obj)
-                end
+                for _, obj in ipairs(char:GetDescendants()) do destroyVisual(obj) end
             end
         end
     end)
@@ -12013,36 +12049,22 @@ end
 
 local function purgeAllVisuals()
     local destroyed = setmetatable({}, {__mode = "k"})
-
     local function destroyVisual(obj)
         if not obj or destroyed[obj] then return end
         if obj:GetAttribute("_AutoHUD") ~= true then return end
-
         destroyed[obj] = true
-        activeVisuals[obj] = nil
-
-        pcall(function()
-            obj:Destroy()
-        end)
+        T.activeVisuals[obj] = nil
+        pcall(function() obj:Destroy() end)
     end
-
-    for obj in pairs(activeVisuals) do
-        destroyVisual(obj)
-    end
-
+    for obj in pairs(T.activeVisuals) do destroyVisual(obj) end
     pcall(function()
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            destroyVisual(obj)
-        end
+        for _, obj in ipairs(Workspace:GetDescendants()) do destroyVisual(obj) end
     end)
-
     pcall(function()
         for _, player in ipairs(Players:GetPlayers()) do
             local char = player.Character
             if char then
-                for _, obj in ipairs(char:GetDescendants()) do
-                    destroyVisual(obj)
-                end
+                for _, obj in ipairs(char:GetDescendants()) do destroyVisual(obj) end
             end
         end
     end)
@@ -12079,10 +12101,10 @@ alertLabel.TextSize = 16
 alertLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 alertLabel.Parent = alertFrame
 
-local alertActive = false
-local alertTween = nil
-local targetPos = UDim2.new(1, -16, 0, 16)
-local hidePos = UDim2.new(1, 250, 0, 16)
+T.alertActive = false
+T.alertTween = nil
+T.targetPos = UDim2.new(1, -16, 0, 16)
+T.hidePos = UDim2.new(1, 250, 0, 16)
 
 local alertSound = Instance.new("Sound")
 alertSound.Name = "StunAlertSound"
@@ -12090,152 +12112,85 @@ alertSound.SoundId = "rbxassetid://3023237993"
 alertSound.Volume = 0.8
 alertSound.Parent = SoundService
 
-alertSound.Volume = 0
-alertSound:Play()
-task.delay(0.5, function()
-    alertSound:Stop()
-    alertSound.Volume = 0.8
-end)
-local Tab = Window:Tab({
-    Title = "普通功能",
-    Icon = "hammer",
-    Locked = false,
-})
-local MainTab = Window:Tab({
-    Title = "幸存者功能",
-    Icon = "user",
-    Locked = false,
-})
-local KillerTab = Window:Tab({
-    Title = "杀手功能",
-    Icon = "sword",
-    Locked = false,
-})
+local Tab = Window:Tab({ Title = "普通功能", Icon = "hammer", Locked = false })
+local MainTab = Window:Tab({ Title = "幸存者功能", Icon = "user", Locked = false })
+local KillerTab = Window:Tab({ Title = "杀手功能", Icon = "sword", Locked = false })
+local EspTab = Window:Tab({ Title = "透视功能", Icon = "eye", Locked = false })
+local VisualsTab = Window:Tab({ Title = "视觉提醒", Icon = "palette", Locked = false })
 
-local EspTab = Window:Tab({
-    Title = "透视功能",
-    Icon = "eye",
-    Locked = false,
-})
-local VisualsTab = Window:Tab({
-    Title = "视觉提醒",
-    Icon = "palette",
-    Locked = false,
-})
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-
-local tpwalking = false
-local tpwalkSpeed = 5
-
+T.tpwalking = false
+T.tpwalkSpeed = 5
 Tab:Toggle({
     Title = "速度",
     Value = false,
     Callback = function(state)
-        tpwalking = state
+        T.tpwalking = state
         if state then
             spawn(function()
-                while tpwalking do
+                while T.tpwalking do
                     local chr = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                     local hrp = chr:FindFirstChild("HumanoidRootPart")
                     local hum = chr:FindFirstChildWhichIsA("Humanoid")
                     local delta = RunService.Heartbeat:Wait()
                     if hrp and hum and hum.MoveDirection.Magnitude > 0 then
-                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * tpwalkSpeed * delta)
+                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * T.tpwalkSpeed * delta)
                     end
                 end
             end)
         end
     end
 })
-
 Tab:Slider({
     Title = "速度调节",
-    Value = {
-        Min = 1,
-        Max = 10,
-        Default = tpwalkSpeed,
-    },
-    Callback = function(value)
-        tpwalkSpeed = value
-    end
+    Value = { Min = 1, Max = 10, Default = T.tpwalkSpeed },
+    Callback = function(value) T.tpwalkSpeed = value end
 })
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
-local LocalPlayer = Players.LocalPlayer
-
-local NoclipEnabled = false
-local NoclipConnection
-
+T.NoclipEnabled = false
+T.NoclipConnection = nil
 local function setCharacterCollision(character, state)
     for _, v in ipairs(character:GetDescendants()) do
-        if v:IsA("BasePart") then
-            v.CanCollide = state
-        end
+        if v:IsA("BasePart") then v.CanCollide = state end
     end
 end
-
 local function enableNoclip()
     local character = LocalPlayer.Character
     if not character then return end
-
     setCharacterCollision(character, false)
-
-    if NoclipConnection then
-        NoclipConnection:Disconnect()
-    end
-
-    NoclipConnection = RunService.Stepped:Connect(function()
-        if not NoclipEnabled then return end
+    if T.NoclipConnection then T.NoclipConnection:Disconnect() end
+    T.NoclipConnection = RunService.Stepped:Connect(function()
+        if not T.NoclipEnabled then return end
         local char = LocalPlayer.Character
         if char then
             for _, v in ipairs(char:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    v.CanCollide = false
-                end
+                if v:IsA("BasePart") then v.CanCollide = false end
             end
         end
     end)
 end
-
 local function disableNoclip()
-    if NoclipConnection then
-        NoclipConnection:Disconnect()
-        NoclipConnection = nil
+    if T.NoclipConnection then
+        T.NoclipConnection:Disconnect()
+        T.NoclipConnection = nil
     end
-
     local character = LocalPlayer.Character
-    if character then
-        setCharacterCollision(character, true)
-    end
+    if character then setCharacterCollision(character, true) end
 end
-
 LocalPlayer.CharacterAdded:Connect(function()
-    if NoclipEnabled then
+    if T.NoclipEnabled then
         task.wait(0.2)
         enableNoclip()
     end
 end)
-
 Tab:Toggle({
     Title = "穿墙",
     Desc = "有些地方你穿了不会拉回，有些就会",
     Value = false,
     Callback = function(state)
-        NoclipEnabled = state
-        if state then
-            enableNoclip()
-        else
-            disableNoclip()
-        end
+        T.NoclipEnabled = state
+        if state then enableNoclip() else disableNoclip() end
     end
 })
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
 Tab:Button({
     Title = "删除雾",
     Callback = function()
@@ -12243,7 +12198,6 @@ Tab:Button({
         if sky then sky:Destroy() end
     end,
 })
-
 Tab:Toggle({
     Title = "地图高亮",
     Value = false,
@@ -12260,28 +12214,14 @@ Tab:Toggle({
         end
     end,
 })
-do
-    local Players = game:GetService("Players")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local RunService = game:GetService("RunService")
-    local Workspace = game:GetService("Workspace")
-    local LocalPlayer = Players.LocalPlayer
 
+do
     local AUTO_PARRY_ATTACK_ANIMS = {
-        "rbxassetid://113691709436161",
-        "rbxassetid://133963973694098",
-        "rbxassetid://79310600168078",
-        "rbxassetid://75618342544502",
-        "rbxassetid://74968262036854",
-        "rbxassetid://98163597193511",
-        "rbxassetid://101636125032002",
-        "rbxassetid://100014992013740",
-        "rbxassetid://81963230963908",
-        "rbxassetid://111920872708571",
-        "rbxassetid://130593238885843",
-        "rbxassetid://138720291317243",
-        "rbxassetid://121216847022485",
-        "rbxassetid://83333467665074",
+        "rbxassetid://113691709436161", "rbxassetid://133963973694098", "rbxassetid://79310600168078",
+        "rbxassetid://75618342544502", "rbxassetid://74968262036854", "rbxassetid://98163597193511",
+        "rbxassetid://101636125032002", "rbxassetid://100014992013740", "rbxassetid://81963230963908",
+        "rbxassetid://111920872708571", "rbxassetid://130593238885843", "rbxassetid://138720291317243",
+        "rbxassetid://121216847022485", "rbxassetid://83333467665074",
     }
     local AUTO_PARRY_SPECIAL_ANIM = "rbxassetid://106871536134254"
     local AUTO_PARRY_SPECIAL_RANGE = 14
@@ -12355,9 +12295,7 @@ do
     local function inParryZone(killerRoot, myRoot, killerChar, radius)
         local dist = (myRoot.Position - killerRoot.Position).Magnitude
         if dist > radius then return false end
-        if parryFacingCheckOn and not isFacingMe(killerRoot, myRoot.Position) then
-            return false
-        end
+        if parryFacingCheckOn and not isFacingMe(killerRoot, myRoot.Position) then return false end
         return hasLOS(killerRoot, myRoot, killerChar)
     end
 
@@ -12366,32 +12304,25 @@ do
     local CLIENT_SCAN_RETRY = 3
 
     local function findParryClient()
-    if type(getgc) ~= "function" then return nil end
-    local ok, gc = pcall(getgc, true)
-    if not ok or not gc then return nil end
-    for _, v in pairs(gc) do
-        if type(v) == "table" then
-            if rawget(v, "parryEvent") ~= nil
-                and rawget(v, "parryResult") ~= nil then
-                local mt = getmetatable(v)
-                if mt then
-                    local fn = rawget(mt, "Parry")
-                    if type(fn) == "function" then
-                        return v
+        if type(getgc) ~= "function" then return nil end
+        local ok, gc = pcall(getgc, true)
+        if not ok or not gc then return nil end
+        for _, v in pairs(gc) do
+            if type(v) == "table" then
+                if rawget(v, "parryEvent") ~= nil and rawget(v, "parryResult") ~= nil then
+                    local mt = getmetatable(v)
+                    if mt then
+                        local fn = rawget(mt, "Parry")
+                        if type(fn) == "function" then return v end
                     end
-                end
-                if type(rawget(v, "Parry")) == "function" then
-                    return v
-                end
-                local okIdx, idx = pcall(function() return v.Parry end)
-                if okIdx and type(idx) == "function" then
-                    return v
+                    if type(rawget(v, "Parry")) == "function" then return v end
+                    local okIdx, idx = pcall(function() return v.Parry end)
+                    if okIdx and type(idx) == "function" then return v end
                 end
             end
         end
+        return nil
     end
-    return nil
-end
 
     local function getParryClient()
         if parryClientCache then return parryClientCache end
@@ -12404,7 +12335,6 @@ end
     end
 
     local lastFire = 0
-
     local function fireParry()
         local now = os.clock()
         if now - lastFire < AUTO_PARRY_COOLDOWN then return end
@@ -12437,7 +12367,6 @@ end
 
     local watchedAnims = setmetatable({}, {__mode = "k"})
     local watchedChars = setmetatable({}, {__mode = "k"})
-
     local function hookAnimator(animator, char)
         if not animator or watchedAnims[animator] then return end
         watchedAnims[animator] = true
@@ -12454,7 +12383,6 @@ end
             end
         end)
     end
-
     local function watchChar(char)
         if not char or watchedChars[char] then return end
         if not isKillerChar(char) then return end
@@ -12468,7 +12396,6 @@ end
             end)
         end
     end
-
     local function watchPlayer(player)
         if player == LocalPlayer then return end
         if player.Character then watchChar(player.Character) end
@@ -12477,17 +12404,13 @@ end
             watchChar(c)
         end)
     end
-
     for _, p in ipairs(Players:GetPlayers()) do watchPlayer(p) end
     Players.PlayerAdded:Connect(watchPlayer)
-
     task.spawn(function()
         while true do
             task.wait(2)
             for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    watchChar(p.Character)
-                end
+                if p ~= LocalPlayer and p.Character then watchChar(p.Character) end
             end
         end
     end)
@@ -12502,33 +12425,21 @@ end
         if parryFacingCheckOn then return math.acos(VIS_FACING_DOT) end
         return math.pi
     end
-
     local function segCountFor(halfAngle)
         return math.max(8, math.ceil((halfAngle * 2) / math.rad(5)))
     end
-
     local function lerpColor(a, b, t)
-        return Color3.new(
-            a.R + (b.R - a.R) * t,
-            a.G + (b.G - a.G) * t,
-            a.B + (b.B - a.B) * t
-        )
+        return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
     end
-
     local killerVis = setmetatable({}, {__mode = "k"})
-
     local function destroyVis(entry)
         if not entry then return end
-        for _, p in ipairs(entry.segs) do
-            pcall(function() p:Destroy() end)
-        end
+        for _, p in ipairs(entry.segs) do pcall(function() p:Destroy() end) end
     end
-
     local function createVis(radius, halfAngle)
         local n = segCountFor(halfAngle)
         local segAngle = (halfAngle * 2) / n
-        local segs = {}
-        local colors = {}
+        local segs, colors = {}, {}
         for i = 1, n do
             local segW = 2 * radius * math.tan(segAngle / 2) * 1.08
             local p = Instance.new("Part")
@@ -12548,7 +12459,6 @@ end
         end
         return {segs = segs, colors = colors, radius = radius, halfAngle = halfAngle}
     end
-
     local function ensureVis(entry, radius, halfAngle)
         local n = segCountFor(halfAngle)
         if not entry or #entry.segs ~= n then
@@ -12566,7 +12476,6 @@ end
         entry.halfAngle = halfAngle
         return entry
     end
-
     local function clearAllVis()
         for c, entry in pairs(killerVis) do
             destroyVis(entry)
@@ -12577,24 +12486,20 @@ end
 
     local zoneCache = setmetatable({}, {__mode = "k"})
     local frameCounter = 0
-
     RunService.Heartbeat:Connect(function(dt)
         if not parryVisOn then
             if next(killerVis) ~= nil then clearAllVis() end
             return
         end
-
         frameCounter = frameCounter + 1
         local doLOS = (frameCounter % VIS_LOS_EVERY == 0)
         local doColor = (frameCounter % VIS_COLOR_EVERY == 0)
-
         local myChar = LocalPlayer.Character
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
         local alpha = math.clamp(dt * VIS_LERP_SPEED * VIS_COLOR_EVERY, 0, 1)
         local halfAngle = getConeHalfAngle()
         local segAngle = (halfAngle * 2) / segCountFor(halfAngle)
         local seen = {}
-
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 local char = player.Character
@@ -12605,30 +12510,21 @@ end
                         seen[char] = true
                         local entry = ensureVis(killerVis[char], autoParryRange, halfAngle)
                         killerVis[char] = entry
-
                         local inZone
                         if doLOS then
                             inZone = false
-                            if myRoot then
-                                inZone = inParryZone(kRoot, myRoot, char, autoParryRange)
-                            end
+                            if myRoot then inZone = inParryZone(kRoot, myRoot, char, autoParryRange) end
                             zoneCache[char] = inZone
                         else
                             inZone = zoneCache[char] or false
                             if not myRoot then inZone = false end
                         end
                         local target = inZone and VIS_ACTIVE_COLOR or VIS_IDLE_COLOR
-
                         local look = kRoot.CFrame.LookVector
                         local flatLook = Vector3.new(look.X, 0, look.Z)
-                        if flatLook.Magnitude < 0.001 then
-                            flatLook = Vector3.new(0, 0, -1)
-                        else
-                            flatLook = flatLook.Unit
-                        end
+                        if flatLook.Magnitude < 0.001 then flatLook = Vector3.new(0, 0, -1) else flatLook = flatLook.Unit end
                         local basePos = kRoot.Position + Vector3.new(0, VIS_Y_OFFSET, 0)
                         local baseCF = CFrame.new(basePos, basePos + flatLook)
-
                         for i = 1, #entry.segs do
                             local part = entry.segs[i]
                             local angMid = -halfAngle + (i - 0.5) * segAngle
@@ -12643,7 +12539,6 @@ end
                 end
             end
         end
-
         for c, entry in pairs(killerVis) do
             if not seen[c] then
                 destroyVis(entry)
@@ -12653,185 +12548,71 @@ end
         end
     end)
 
-    MainTab:Toggle({
-        Title = "自动匕首格挡",
-        Value = false,
-        Callback = function(s) autoParryOn = s end,
-    })
-    MainTab:Toggle({
-        Title = "可视化可格挡距离",
-        Value = false,
-        Callback = function(s)
-            parryVisOn = s
-            if not s then clearAllVis() end
-        end,
-    })
-    MainTab:Toggle({
-        Title = "格挡墙体检测",
-        Value = true,
-        Callback = function(s) parryWallCheckOn = s end,
-    })
-    MainTab:Toggle({
-        Title = "格挡朝向检测",
-        Value = true,
-        Callback = function(s) parryFacingCheckOn = s end,
-    })
+    MainTab:Toggle({ Title = "自动匕首格挡", Value = false, Callback = function(s) autoParryOn = s end })
+    MainTab:Toggle({ Title = "可视化可格挡距离", Value = false, Callback = function(s) parryVisOn = s; if not s then clearAllVis() end end })
+    MainTab:Toggle({ Title = "格挡墙体检测", Value = true, Callback = function(s) parryWallCheckOn = s end })
+    MainTab:Toggle({ Title = "格挡朝向检测", Value = true, Callback = function(s) parryFacingCheckOn = s end })
     MainTab:Slider({
         Title = "自动格挡距离",
         Value = {Min = 1, Max = 20, Default = 7},
         Callback = function(val)
-            if type(val) == "table" then
-                val = val.Value or val.Value2 or val[1]
-            end
+            if type(val) == "table" then val = val.Value or val.Value2 or val[1] end
             if type(val) == "number" then autoParryRange = val end
         end,
     })
 end
-local fallHookInstalled = false
 
+local fallHookInstalled = false
 local function installFallHook()
     if fallHookInstalled then return true end
     local ok = false
-
     if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
         local oldNamecall
         local okN = pcall(function()
             oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
                 local m = getnamecallmethod()
                 if m == "FireServer" and typeof(self) == "Instance" then
-                    if self.Name == "Fall" and fallBlockOn then return end
-                    if self.Name == "TrapContact" and trapImmuneOn then return end
+                    if self.Name == "Fall" and T.fallBlockOn then return end
+                    if self.Name == "TrapContact" and T.trapImmuneOn then return end
                 end
                 return oldNamecall(self, ...)
             end)
         end)
-
         local oldIndex
         local okI = pcall(function()
             oldIndex = hookmetamethod(game, "__index", function(self, key)
                 if key == "FireServer" and typeof(self) == "Instance" then
-                    if self.Name == "Fall" and fallBlockOn then return function() end end
-                    if self.Name == "TrapContact" and trapImmuneOn then return function() end end
+                    if self.Name == "Fall" and T.fallBlockOn then return function() end end
+                    if self.Name == "TrapContact" and T.trapImmuneOn then return function() end end
                 end
                 return oldIndex(self, key)
             end)
         end)
-
-        if okN or okI then
-            ok = true
-        end
+        if okN or okI then ok = true end
     end
-
-    if ok then
-        fallHookInstalled = true
-    end
+    if ok then fallHookInstalled = true end
     return fallHookInstalled
 end
-
 pcall(installFallHook)
 
-MainTab:Toggle({
-    Title = "自动修机完美点击",
-    Value = false,
-    Callback = function(state)
-        running = state
-        if not running then pending = nil end
-    end
-})
+MainTab:Toggle({ Title = "自动修机完美点击", Value = false, Callback = function(state) T.running = state; if not T.running then T.pending = nil end end })
+MainTab:Toggle({ Title = "自动砸板", Value = false, Callback = function(state) T.autoPalletDropOn = state end })
+MainTab:Toggle({ Title = "免疫坠落减速", Value = false, Callback = function(state) T.fallBlockOn = state; if T.fallBlockOn and not fallHookInstalled then installFallHook() end end })
+MainTab:Toggle({ Title = "自动拆夹子", Value = false, Callback = function(state) T.autoDisarmOn = state; if not T.autoDisarmOn then stopTrapDisarm("cancel") end end })
+MainTab:Toggle({ Title = "自动夹子完美点击", Value = false, Callback = function(state) T.autoQTEOn = state; if not T.autoQTEOn then T.qteFired = false; T.qteLastTargetRot = nil end end })
+MainTab:Toggle({ Title = "免疫夹子", Value = false, Callback = function(state) T.trapImmuneOn = state; if T.trapImmuneOn and not fallHookInstalled then installFallHook() end end })
 
-MainTab:Toggle({
-    Title = "自动砸板",
-    Value = false,
-    Callback = function(state)
-        autoPalletDropOn = state
-    end
-})
-MainTab:Toggle({
-    Title = "免疫坠落减速",
-    Value = false,
-    Callback = function(state)
-        fallBlockOn = state
-        if fallBlockOn and not fallHookInstalled then
-            installFallHook()
-        end
-    end
-})
-MainTab:Toggle({
-    Title = "自动拆夹子",
-    Value = false,
-    Callback = function(state)
-        autoDisarmOn = state
-        if not autoDisarmOn then
-            stopTrapDisarm("cancel")
-        end
-    end
-})
-
-MainTab:Toggle({
-    Title = "自动夹子完美点击",
-    Value = false,
-    Callback = function(state)
-        autoQTEOn = state
-        if not autoQTEOn then
-            qteFired = false
-            qteLastTargetRot = nil
-        end
-    end
-})
-
-MainTab:Toggle({
-    Title = "免疫夹子",
-    Value = false,
-    Callback = function(state)
-        trapImmuneOn = state
-        if trapImmuneOn and not fallHookInstalled then
-            installFallHook()
-        end
-    end
-})
-EspTab:Toggle({
-    Title = "发电机透视",
-    Value = false,
-    Callback = function(state)
-        espGeneratorOn = state
-        if espGeneratorOn then forceRescan() else purgeByName(GEN_HL) end
-    end
-})
-
-EspTab:Toggle({
-    Title = "进度显示",
-    Value = false,
-    Callback = function(state)
-        espProgressOn = state
-        if espProgressOn then forceRescan() else purgeByName(PROGRESS_NAME) end
-    end
-})
-
-EspTab:Toggle({
-    Title = "杀手透视",
-    Value = false,
-    Callback = function(state)
-        espKillerOn = state
-        if espKillerOn then pcall(updatePlayers) else purgeByName(KILLER_HL) end
-    end
-})
-
-EspTab:Toggle({
-    Title = "幸存者透视",
-    Value = false,
-    Callback = function(state)
-        espSurvivorOn = state
-        if espSurvivorOn then pcall(updatePlayers) else purgeByName(SURV_HL) end
-    end
-})
-
+EspTab:Toggle({ Title = "发电机透视", Value = false, Callback = function(state) T.espGeneratorOn = state; if T.espGeneratorOn then forceRescan() else purgeByName(GEN_HL) end end })
+EspTab:Toggle({ Title = "进度显示", Value = false, Callback = function(state) T.espProgressOn = state; if T.espProgressOn then forceRescan() else purgeByName(PROGRESS_NAME) end end })
+EspTab:Toggle({ Title = "杀手透视", Value = false, Callback = function(state) T.espKillerOn = state; if T.espKillerOn then pcall(updatePlayers) else purgeByName(KILLER_HL) end end })
+EspTab:Toggle({ Title = "幸存者透视", Value = false, Callback = function(state) T.espSurvivorOn = state; if T.espSurvivorOn then pcall(updatePlayers) else purgeByName(SURV_HL) end end })
 EspTab:Toggle({
     Title = "板子透视",
     Value = false,
     Callback = function(state)
-        espPalletOn = state
-        if espPalletOn then
-            palletScanDirty = true
+        T.espPalletOn = state
+        if T.espPalletOn then
+            T.palletScanDirty = true
             pcall(updatePallets)
         else
             purgeByName(PALLET_HL)
@@ -12844,179 +12625,163 @@ EspTab:Toggle({
     Desc = "由于不知名原因所以只能用这个非常丑不拉几的透视来弄",
     Value = false,
     Callback = function(state)
-        espWindowOn = state
-        if espWindowOn then
-            windowScanDirty = true
+        T.espWindowOn = state
+        if T.espWindowOn then
+            T.windowScanDirty = true
         else
             purgeByName(WINDOW_HL)
-            for k in pairs(windowCache) do windowCache[k] = nil end
+            for k in pairs(T.windowCache) do T.windowCache[k] = nil end
         end
     end
 })
-EspTab:Toggle({
-    Title = "钩子透视",
-    Value = false,
-    Callback = function(state)
-        espHookOn = state
-        if not espHookOn then purgeByName(HOOK_HL) end
-    end
-})
+EspTab:Toggle({ Title = "钩子透视", Value = false, Callback = function(state) T.espHookOn = state; if not T.espHookOn then purgeByName(HOOK_HL) end end })
 EspTab:Toggle({
     Title = "夹子透视",
     Value = false,
     Callback = function(state)
-        espTrapOn = state
-        if not espTrapOn then
-            for trap, hl in pairs(trapHighlightCache) do
+        T.espTrapOn = state
+        if not T.espTrapOn then
+            for trap, hl in pairs(T.trapHighlightCache) do
                 if hl then pcall(function() hl:Destroy() end) end
-                trapHighlightCache[trap] = nil
+                T.trapHighlightCache[trap] = nil
             end
         end
     end
 })
-_G._AutoHUD_Pumpkin = _G._AutoHUD_Pumpkin or {
-    color = Color3.fromRGB(180, 130, 0),
-    cache = setmetatable({}, {__mode = "k"}),
-}
 
 do
-    local Workspace = game:GetService("Workspace")
-
     local PUMKIN_HL = "_AutoHUD_PumpkinHL"
-    local espPumpkinOn = false
-    local PUMPKIN_CHECK_INTERVAL = 0.5
-
+    local PUMPKIN_SCAN_INTERVAL = 1
     local pumpkinCache = _G._AutoHUD_Pumpkin.cache
-    local pumpkinsFolder = nil
+    local lastPumpkinScan = 0
+    local allPumpkins = {}
 
-    local function getPumpkinsFolder()
-        local map = Workspace:FindFirstChild("Map")
-        if not map then return nil end
-        return map:FindFirstChild("Pumpkins")
+    local function findPumpkinPart(p)
+        if p:IsA("BasePart") then return p end
+        if p.PrimaryPart then return p.PrimaryPart end
+        return p:FindFirstChildWhichIsA("BasePart", true)
     end
 
-    local function isPumpkinObj(obj)
-        return obj and (obj:IsA("Model") or obj:IsA("BasePart"))
+    local function findPumpkinRoot(obj)
+        local node = obj
+        for _ = 1, 6 do
+            if not node or not node.Parent then break end
+            if node:IsA("Model") and string.find(string.lower(node.Name), "pumpkin", 1, true) then return node end
+            node = node.Parent
+        end
+        if obj:IsA("Model") and string.find(string.lower(obj.Name), "pumpkin", 1, true) then return obj end
+        return nil
     end
 
-    local function makePumpkinHL(pumpkin)
-        if not pumpkin or not pumpkin.Parent then return nil end
-        local color = _G._AutoHUD_Pumpkin.color
-        local hl = Instance.new("Highlight")
-        hl.Name = PUMKIN_HL
-        hl.Adornee = pumpkin
-        hl.FillColor = color
-        hl.OutlineColor = color
-        hl.FillTransparency = 0.45
-        hl.OutlineTransparency = 0
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl:SetAttribute("_PumpkinVis", true)
-        hl.Parent = pumpkin
-        pumpkinCache[pumpkin] = hl
-        return hl
-    end
-
-    local function checkPumpkin(pumpkin)
-        if not pumpkin or not pumpkin.Parent then
-            local old = pumpkinCache[pumpkin]
-            if old and old.Parent then
-                pcall(function() old:Destroy() end)
+    local function collectPumpkins()
+        local result = {}
+        local seen = {}
+        local function add(obj)
+            if not obj or seen[obj] then return end
+            local root = findPumpkinRoot(obj)
+            if root and root.Parent then
+                seen[root] = true
+                result[#result + 1] = root
             end
-            pumpkinCache[pumpkin] = nil
-            return
         end
-        if not _G._AutoHUD_Dist or not _G._AutoHUD_Dist.pumpkin then
-    local dbb = pumpkin:FindFirstChild("_AutoHUD_PumpkinDist")
-    if dbb and dbb:GetAttribute("_AutoHUD") == true then dbb:Destroy() end
-end
-        local hl = pumpkinCache[pumpkin]
-        local needRebuild = false
-        if not hl then
-            needRebuild = true
-        elseif hl.Parent ~= pumpkin then
-            needRebuild = true
-        elseif hl.Name ~= PUMKIN_HL then
-            needRebuild = true
-        elseif hl.Adornee ~= pumpkin then
-            needRebuild = true
-        elseif not hl.Enabled then
-            needRebuild = true
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if (obj:IsA("Model") or obj:IsA("BasePart")) and string.find(string.lower(obj.Name), "pumpkin", 1, true) then add(obj) end
         end
-        if needRebuild then
-            if hl and hl.Parent then
-                pcall(function() hl:Destroy() end)
-            end
-            makePumpkinHL(pumpkin)
-            return
-        end
-        local color = _G._AutoHUD_Pumpkin.color
-        if hl.FillColor ~= color then hl.FillColor = color end
-        if hl.OutlineColor ~= color then hl.OutlineColor = color end
-        if hl.FillTransparency ~= 0.45 then hl.FillTransparency = 0.45 end
-        if hl.OutlineTransparency ~= 0 then hl.OutlineTransparency = 0 end
-        if hl.DepthMode ~= Enum.HighlightDepthMode.AlwaysOnTop then
-            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        end
-        ensurePumpkinDist(pumpkin)
+        for _, obj in ipairs(CollectionService:GetTagged("Pumpkin")) do add(obj) end
+        for _, obj in ipairs(CollectionService:GetTagged("pumpkin")) do add(obj) end
+        return result
     end
 
     local function clearAllPumpkins()
-        for pumpkin, hl in pairs(pumpkinCache) do
-            if hl and hl.Parent then
-                pcall(function() hl:Destroy() end)
-            end
-            pumpkinCache[pumpkin] = nil
-        end
-    end
-local function findPumpkinPart(p)
-    if p:IsA("BasePart") then return p end
-    if p.PrimaryPart then return p.PrimaryPart end
-    return p:FindFirstChildWhichIsA("BasePart", true)
-end
-
-local function ensurePumpkinDist(pumpkin)
-    if not pumpkin or not pumpkin.Parent then return end
-    local dist = _G._AutoHUD_Dist
-    if not dist or not dist.pumpkin or not dist.ensure then
-        local old = pumpkin:FindFirstChild("_AutoHUD_PumpkinDist")
-        if old and old:GetAttribute("_AutoHUD") == true then old:Destroy() end
-        return
-    end
-    local part = findPumpkinPart(pumpkin)
-    if not part then return end
-    local myChar = game:GetService("Players").LocalPlayer.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return end
-    local d = math.floor((part.Position - myRoot.Position).Magnitude + 0.5)
-    dist.ensure(pumpkin, part, "_AutoHUD_PumpkinDist", _G._AutoHUD_Pumpkin.color, "[距离：" .. d .. "]")
-end
-    local function scanAllPumpkins()
-        clearAllPumpkins()
-        local folder = getPumpkinsFolder()
-        pumpkinsFolder = folder
-        if not folder then return end
-        for _, child in ipairs(folder:GetChildren()) do
-            if isPumpkinObj(child) then
-                checkPumpkin(child)
-            end
+        for root, hl in pairs(pumpkinCache) do
+            if type(hl) == "Instance" and hl.Parent then pcall(function() hl:Destroy() end) end
+            pumpkinCache[root] = nil
         end
     end
 
-    task.spawn(function()
-        while true do
-            task.wait(PUMPKIN_CHECK_INTERVAL)
-            if espPumpkinOn then
-                local folder = getPumpkinsFolder()
-                if folder ~= pumpkinsFolder then
-                    scanAllPumpkins()
-                elseif folder then
-                    for _, child in ipairs(folder:GetChildren()) do
-                        if isPumpkinObj(child) then
-                            checkPumpkin(child)
-                        end
-                    end
+    local function updatePumpkins()
+        local now = os.clock()
+        if now - lastPumpkinScan > PUMPKIN_SCAN_INTERVAL or _G._AutoHUD_Pumpkin.scanDirty then
+            lastPumpkinScan = now
+            _G._AutoHUD_Pumpkin.scanDirty = false
+            allPumpkins = collectPumpkins()
+            local alive = {}
+            for _, root in ipairs(allPumpkins) do
+                alive[root] = true
+                if pumpkinCache[root] == nil then pumpkinCache[root] = false end
+            end
+            for root in pairs(pumpkinCache) do
+                if not root.Parent or not alive[root] then
+                    local hl = pumpkinCache[root]
+                    if type(hl) == "Instance" and hl.Parent then pcall(function() hl:Destroy() end) end
+                    pumpkinCache[root] = nil
                 end
             end
+        end
+
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local color = _G._AutoHUD_Pumpkin.color
+
+        for root in pairs(pumpkinCache) do
+            if root and root.Parent then
+                local part = findPumpkinPart(root)
+                local hl = pumpkinCache[root]
+
+                if T.espPumpkinOn then
+                    if type(hl) ~= "Instance" or not hl.Parent or hl.Name ~= PUMKIN_HL or hl:GetAttribute("_AutoHUD") ~= true or hl.Adornee ~= root or not hl.Enabled then
+                        if type(hl) == "Instance" and hl.Parent then pcall(function() hl:Destroy() end) end
+                        hl = Instance.new("Highlight")
+                        hl.Name = PUMKIN_HL
+                        hl.Adornee = root
+                        hl.FillColor = color
+                        hl.OutlineColor = color
+                        hl.FillTransparency = 0.45
+                        hl.OutlineTransparency = 0
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl:SetAttribute("_AutoHUD", true)
+                        hl.Parent = root
+                        pumpkinCache[root] = hl
+                        T.activeVisuals[hl] = true
+                    else
+                        hl.Enabled = true
+                        if hl.FillColor ~= color then hl.FillColor = color end
+                        if hl.OutlineColor ~= color then hl.OutlineColor = color end
+                        if hl.FillTransparency ~= 0.45 then hl.FillTransparency = 0.45 end
+                        if hl.OutlineTransparency ~= 0 then hl.OutlineTransparency = 0 end
+                        if hl.DepthMode ~= Enum.HighlightDepthMode.AlwaysOnTop then hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop end
+                    end
+                else
+                    if type(hl) == "Instance" and hl.Parent then pcall(function() hl:Destroy() end) end
+                    pumpkinCache[root] = false
+                end
+
+                if _G._AutoHUD_Dist.pumpkin and T.espPumpkinOn and myRoot and part then
+                    local d = math.floor((part.Position - myRoot.Position).Magnitude + 0.5)
+                    if _G._AutoHUD_Dist.ensure then _G._AutoHUD_Dist.ensure(root, part, "_AutoHUD_PumpkinDist", color, "[距离：" .. d .. "]") end
+                else
+                    removeChild(root, "_AutoHUD_PumpkinDist")
+                end
+
+                if T.espPumpkinNameOn and part then
+                    if _G._AutoHUD_Name.ensure then _G._AutoHUD_Name.ensure(root, part, "_AutoHUD_PumpkinName", color, "南瓜") end
+                else
+                    removeChild(root, "_AutoHUD_PumpkinName")
+                end
+            else
+                local hl = pumpkinCache[root]
+                if type(hl) == "Instance" and hl.Parent then pcall(function() hl:Destroy() end) end
+                pumpkinCache[root] = nil
+            end
+        end
+    end
+
+    _G._AutoHUD_Pumpkin.clear = clearAllPumpkins
+    _G._AutoHUD_Pumpkin.scanDirty = true
+
+    Workspace.DescendantAdded:Connect(function(obj)
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and string.find(string.lower(obj.Name), "pumpkin", 1, true) then
+            _G._AutoHUD_Pumpkin.scanDirty = true
         end
     end)
 
@@ -13024,188 +12789,54 @@ end
         Title = "南瓜透视",
         Value = false,
         Callback = function(state)
-            espPumpkinOn = state
+            T.espPumpkinOn = state
             if state then
-                scanAllPumpkins()
+                _G._AutoHUD_Pumpkin.scanDirty = true
             else
                 clearAllPumpkins()
-                pumpkinsFolder = nil
+                purgeByName("_AutoHUD_PumpkinDist")
+                purgeByName("_AutoHUD_PumpkinName")
             end
-        end,
+        end
     })
 end
-EspTab:Toggle({
-    Title = "发电机距离显示",
-    Value = true,
-    Callback = function(state)
-        _G._AutoHUD_Dist.gen = state
-        if not state then purgeByName("_AutoHUD_GenDist") end
-    end,
-})
 
-EspTab:Toggle({
-    Title = "杀手距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.killer = state
-        if not state then purgeByName("_AutoHUD_KillerDist") end
-    end,
-})
+EspTab:Section({ Title = "距离显示", TextXAlignment = "Left", TextSize = 18 })
+EspTab:Toggle({ Title = "发电机距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.gen = state; if not state then purgeByName("_AutoHUD_GenDist") end end })
+EspTab:Toggle({ Title = "杀手距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.killer = state; if not state then purgeByName("_AutoHUD_KillerDist") end end })
+EspTab:Toggle({ Title = "幸存者距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.survivor = state; if not state then purgeByName("_AutoHUD_SurvDist") end end })
+EspTab:Toggle({ Title = "板子距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.pallet = state; if not state then purgeByName("_AutoHUD_PalletDist") end end })
+EspTab:Toggle({ Title = "窗户距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.window = state; if not state then purgeByName("_AutoHUD_WindowDist") end end })
+EspTab:Toggle({ Title = "钩子距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.hook = state; if not state then purgeByName("_AutoHUD_HookDist") end end })
+EspTab:Toggle({ Title = "夹子距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.trap = state; if not state then purgeByName("_AutoHUD_TrapDist") end end })
+EspTab:Toggle({ Title = "南瓜距离显示", Value = false, Callback = function(state) _G._AutoHUD_Dist.pumpkin = state; if not state then purgeByName("_AutoHUD_PumpkinDist") end end })
 
-EspTab:Toggle({
-    Title = "幸存者距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.survivor = state
-        if not state then purgeByName("_AutoHUD_SurvDist") end
-    end,
-})
+EspTab:Section({ Title = "显示名字", TextXAlignment = "Left", TextSize = 18 })
+EspTab:Toggle({ Title = "发电机名字", Value = false, Callback = function(state) T.espGenNameOn = state; if not state then purgeByName("_AutoHUD_GenName") end end })
+EspTab:Toggle({ Title = "杀手名字", Value = false, Callback = function(state) T.espKillerNameOn = state; if not state then purgeByName("_AutoHUD_KillerName") end end })
+EspTab:Toggle({ Title = "幸存者名字", Value = false, Callback = function(state) T.espSurvivorNameOn = state; if not state then purgeByName("_AutoHUD_SurvivorName") end end })
+EspTab:Toggle({ Title = "板子名字", Value = false, Callback = function(state) T.espPalletNameOn = state; if not state then purgeByName("_AutoHUD_PalletName") end end })
+EspTab:Toggle({ Title = "窗户名字", Value = false, Callback = function(state) T.espWindowNameOn = state; if not state then purgeByName("_AutoHUD_WindowName") end end })
+EspTab:Toggle({ Title = "钩子名字", Value = false, Callback = function(state) T.espHookNameOn = state; if not state then purgeByName("_AutoHUD_HookName") end end })
+EspTab:Toggle({ Title = "夹子名字", Value = false, Callback = function(state) T.espTrapNameOn = state; if not state then purgeByName("_AutoHUD_TrapName") end end })
+EspTab:Toggle({ Title = "南瓜名字", Value = false, Callback = function(state) T.espPumpkinNameOn = state; if not state then purgeByName("_AutoHUD_PumpkinName") end end })
 
-EspTab:Toggle({
-    Title = "板子距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.pallet = state
-        if not state then purgeByName("_AutoHUD_PalletDist") end
-    end,
-})
-
-EspTab:Toggle({
-    Title = "窗户距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.window = state
-        if not state then purgeByName("_AutoHUD_WindowDist") end
-    end,
-})
-
-EspTab:Toggle({
-    Title = "钩子距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.hook = state
-        if not state then purgeByName("_AutoHUD_HookDist") end
-    end,
-})
-
-EspTab:Toggle({
-    Title = "夹子距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.trap = state
-        if not state then purgeByName("_AutoHUD_TrapDist") end
-    end,
-})
-
-EspTab:Toggle({
-    Title = "南瓜距离显示",
-    Value = false,
-    Callback = function(state)
-        _G._AutoHUD_Dist.pumpkin = state
-        if not state then purgeByName("_AutoHUD_PumpkinDist") end
-    end,
-})
-
-EspTab:Section({
-    Title = "透视颜色自定义",
-    TextXAlignment = "Left",
-    TextSize = 18,
-})
-EspTab:Colorpicker({
-    Title = "发电机颜色",
-    Flag = "7",
-    Default = genColor,
-    Flag = "GenColor",
-    Callback = function(color)
-        genColor = color
-        if espGeneratorOn then forceRescan() end
-    end
-})
-
-EspTab:Colorpicker({
-    Title = "进度文字颜色",
-    Flag = "6",
-    Default = progressColor,
-    Flag = "ProgressColor",
-    Callback = function(color)
-        progressColor = color
-        if espProgressOn then forceRescan() end
-    end
-})
-
-EspTab:Colorpicker({
-    Title = "杀手颜色",
-    Flag = "5",
-    Default = killerColor,
-    Flag = "KillerColor",
-    Callback = function(color)
-        killerColor = color
-        if espKillerOn then pcall(updatePlayers) end
-    end
-})
-
-EspTab:Colorpicker({
-    Title = "幸存者颜色",
-    Flag = "4",
-    Default = survColor,
-    Flag = "SurvColor",
-    Callback = function(color)
-        survColor = color
-        if espSurvivorOn then pcall(updatePlayers) end
-    end
-})
-
-EspTab:Colorpicker({
-    Title = "板子颜色",
-    Flag = "3",
-    Default = palletColor,
-    Flag = "PalletColor",
-    Callback = function(color)
-        palletColor = color
-        if espPalletOn then pcall(updatePallets) end
-    end
-})
-
-EspTab:Colorpicker({
-    Title = "窗户颜色",
-    Flag = "2",
-    Default = windowColor,
-    Flag = "WindowColor",
-    Callback = function(color)
-        windowColor = color
-        if espWindowOn then
-            windowScanDirty = true
-            pcall(updateWindowsAndHooks)
-        end
-    end
-})
-
-EspTab:Colorpicker({
-    Title = "钩子颜色",
-    Flag = "1",
-    Default = hookColor,
-    Flag = "HookColor",
-    Callback = function(color)
-        hookColor = color
-        if espHookOn then
-            hookScanDirty = true
-            pcall(updateWindowsAndHooks)
-        end
-    end
-})
+EspTab:Section({ Title = "透视颜色自定义", TextXAlignment = "Left", TextSize = 18 })
+EspTab:Colorpicker({ Title = "发电机颜色", Flag = "7", Default = T.genColor, Flag = "GenColor", Callback = function(color) T.genColor = color; if T.espGeneratorOn then forceRescan() end end })
+EspTab:Colorpicker({ Title = "进度文字颜色", Flag = "6", Default = T.progressColor, Flag = "ProgressColor", Callback = function(color) T.progressColor = color; if T.espProgressOn then forceRescan() end end })
+EspTab:Colorpicker({ Title = "杀手颜色", Flag = "5", Default = T.killerColor, Flag = "KillerColor", Callback = function(color) T.killerColor = color; if T.espKillerOn then pcall(updatePlayers) end end })
+EspTab:Colorpicker({ Title = "幸存者颜色", Flag = "4", Default = T.survColor, Flag = "SurvColor", Callback = function(color) T.survColor = color; if T.espSurvivorOn then pcall(updatePlayers) end end })
+EspTab:Colorpicker({ Title = "板子颜色", Flag = "3", Default = T.palletColor, Flag = "PalletColor", Callback = function(color) T.palletColor = color; if T.espPalletOn then pcall(updatePallets) end end })
+EspTab:Colorpicker({ Title = "窗户颜色", Flag = "2", Default = T.windowColor, Flag = "WindowColor", Callback = function(color) T.windowColor = color; if T.espWindowOn then T.windowScanDirty = true; pcall(updateWindowsAndHooks) end end })
+EspTab:Colorpicker({ Title = "钩子颜色", Flag = "1", Default = T.hookColor, Flag = "HookColor", Callback = function(color) T.hookColor = color; if T.espHookOn then T.hookScanDirty = true; pcall(updateWindowsAndHooks) end end })
 EspTab:Colorpicker({
     Title = "夹子颜色",
-    Default = trapESPColor,
+    Default = T.trapESPColor,
     Flag = "TrapESPColor",
     Callback = function(color)
-        trapESPColor = color
-        for _, hl in pairs(trapHighlightCache) do
-            if hl and hl.Parent then
-                pcall(function()
-                    hl.FillColor = color
-                    hl.OutlineColor = color
-                end)
-            end
+        T.trapESPColor = color
+        for _, hl in pairs(T.trapHighlightCache) do
+            if hl and hl.Parent then pcall(function() hl.FillColor = color; hl.OutlineColor = color end) end
         end
     end
 })
@@ -13216,34 +12847,19 @@ EspTab:Colorpicker({
     Callback = function(color)
         _G._AutoHUD_Pumpkin.color = color
         for pumpkin, hl in pairs(_G._AutoHUD_Pumpkin.cache) do
-            if hl and hl.Parent then
-                pcall(function()
-                    hl.FillColor = color
-                    hl.OutlineColor = color
-                end)
-            end
+            if hl and hl.Parent then pcall(function() hl.FillColor = color; hl.OutlineColor = color end) end
         end
     end,
 })
-KillerTab:Toggle({
-    Title = "自动毁板",
-    Value = false,
-    Callback = function(state)
-        autoBreakPalletOn = state
-    end
-})
 
-KillerTab:Toggle({
-    Title = "自动踹机",
-    Value = false,
-    Callback = function(state)
-        autoKickGenOn = state
-    end
-})
+KillerTab:Toggle({ Title = "自动毁板", Value = false, Callback = function(state) T.autoBreakPalletOn = state end })
+KillerTab:Toggle({ Title = "自动踹机", Value = false, Callback = function(state) T.autoKickGenOn = state end })
+
 local stunEvent = nil
 local stunOverEvent = nil
 pcall(function()
-    local pal = remotes:FindFirstChild("Pallet")
+    if not T.remotes then return end
+    local pal = T.remotes:FindFirstChild("Pallet")
     local jason = pal and pal:FindFirstChild("Jason")
     if jason then
         stunEvent = jason:FindFirstChild("Stun")
@@ -13251,11 +12867,11 @@ pcall(function()
     end
 end)
 
-local stunImmuneOn = false
-local flashImmuneOn = false
-local stunTargetStates = {}
-local stunConns = {}
-local lastStunOver = 0
+T.stunImmuneOn = false
+T.flashImmuneOn = false
+T.stunTargetStates = {}
+T.stunConns = {}
+T.lastStunOver = 0
 
 local function killerActive()
     local c = LocalPlayer.Character
@@ -13273,16 +12889,14 @@ end
 
 local function refreshStunTargets()
     if type(getgc) ~= "function" then return end
-    stunTargetStates = {}
+    T.stunTargetStates = {}
     local ok, gc = pcall(getgc, true)
     if not ok then return end
     for _, v in pairs(gc) do
         if type(v) == "table" then
             local a = rawget(v, "isTrueStunned")
             local b = rawget(v, "attackLockedUntil")
-            if a ~= nil or b ~= nil then
-                table.insert(stunTargetStates, v)
-            end
+            if a ~= nil or b ~= nil then table.insert(T.stunTargetStates, v) end
         end
     end
 end
@@ -13290,9 +12904,7 @@ end
 if type(getconnections) == "function" and stunEvent then
     local ok, conns = pcall(function() return getconnections(stunEvent.OnClientEvent) end)
     if ok and conns then
-        for _, conn in pairs(conns) do
-            table.insert(stunConns, conn)
-        end
+        for _, conn in pairs(conns) do table.insert(T.stunConns, conn) end
     end
 end
 
@@ -13300,9 +12912,7 @@ if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" 
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
-        if (method == "FireServer" or method == "Fire") and self == stunEvent and stunImmuneOn then
-            return
-        end
+        if (method == "FireServer" or method == "Fire") and self == stunEvent and T.stunImmuneOn then return end
         return oldNamecall(self, ...)
     end)
 end
@@ -13310,9 +12920,7 @@ end
 task.spawn(function()
     while true do
         task.wait(2)
-        if stunImmuneOn then
-            refreshStunTargets()
-        end
+        if T.stunImmuneOn then refreshStunTargets() end
     end
 end)
 
@@ -13320,52 +12928,35 @@ KillerTab:Toggle({
     Title = "免疫板子眩晕",
     Value = false,
     Callback = function(state)
-        stunImmuneOn = state
+        T.stunImmuneOn = state
         if state then
             refreshStunTargets()
-            for _, conn in ipairs(stunConns) do
-                pcall(function() conn:Disable() end)
-            end
+            for _, conn in ipairs(T.stunConns) do pcall(function() conn:Disable() end) end
         else
-            stunTargetStates = {}
-            for _, conn in ipairs(stunConns) do
-                pcall(function() conn:Enable() end)
-            end
+            T.stunTargetStates = {}
+            for _, conn in ipairs(T.stunConns) do pcall(function() conn:Enable() end) end
         end
     end
 })
-
-KillerTab:Toggle({
-    Title = "免疫手电筒",
-    Value = false,
-    Callback = function(state)
-        flashImmuneOn = state
-    end
-})
+KillerTab:Toggle({ Title = "免疫手电筒", Value = false, Callback = function(state) T.flashImmuneOn = state end })
 
 RunService.Heartbeat:Connect(function()
-    if not stunImmuneOn and not flashImmuneOn then return end
+    if not T.stunImmuneOn and not T.flashImmuneOn then return end
     if not killerActive() then return end
     local char = LocalPlayer.Character
     if not char then return end
-
-    if flashImmuneOn then
+    if T.flashImmuneOn then
         local head = char:FindFirstChild("Head")
-        if head and head:GetAttribute("Blindness") then
-            head:SetAttribute("Blindness", 0)
-        end
+        if head and head:GetAttribute("Blindness") then head:SetAttribute("Blindness", 0) end
         local cam = Workspace.CurrentCamera
         if cam then
             for _, v in ipairs(cam:GetChildren()) do
-                if v.Name == "FlashBlindColor" or v.Name == "FlashBlindBlur" then
-                    v:Destroy()
-                end
+                if v.Name == "FlashBlindColor" or v.Name == "FlashBlindBlur" then v:Destroy() end
             end
         end
     end
-
-    if stunImmuneOn then
-        for _, state in ipairs(stunTargetStates) do
+    if T.stunImmuneOn then
+        for _, state in ipairs(T.stunTargetStates) do
             pcall(function()
                 if state.isTrueStunned ~= nil then state.isTrueStunned = false end
                 if state.isStunned ~= nil then state.isStunned = false end
@@ -13374,11 +12965,9 @@ RunService.Heartbeat:Connect(function()
                 if state.canUpdateSpeed ~= nil then state.canUpdateSpeed = true end
             end)
         end
-
         if char:GetAttribute("IsStunned") then char:SetAttribute("IsStunned", false) end
         if char:GetAttribute("Immobile") then char:SetAttribute("Immobile", false) end
         if char:GetAttribute("overridelookscript") then char:SetAttribute("overridelookscript", false) end
-
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             local speed = char:GetAttribute("Speed") or 16
@@ -13395,68 +12984,37 @@ RunService.Heartbeat:Connect(function()
                 end
             end
         end
-
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
             if hrp.Anchored then hrp.Anchored = false end
             if hrp:HasTag("doing action") then hrp:RemoveTag("doing action") end
-            if hrp.AssemblyAngularVelocity.Magnitude > 1 then
-                hrp.AssemblyAngularVelocity = Vector3.zero
-            end
+            if hrp.AssemblyAngularVelocity.Magnitude > 1 then hrp.AssemblyAngularVelocity = Vector3.zero end
         end
-
         local now = tick()
-        if stunOverEvent and now - lastStunOver > 0.1 then
-            lastStunOver = now
+        if stunOverEvent and now - T.lastStunOver > 0.1 then
+            T.lastStunOver = now
             pcall(function() stunOverEvent:FireServer(char) end)
         end
     end
 end)
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
-local FpsBypass = {
-    Active = false,
-    Connections = {},
-    HookInstalled = false,
-    SavedTransparency = {},
-    SavedCameraOffset = nil,
-    SavedMinZoom = nil,
-    SavedMaxZoom = nil,
-    SavedCameraMode = nil,
-}
-
+T.FpsBypass = { Active = false, Connections = {}, HookInstalled = false, SavedTransparency = {}, SavedCameraOffset = nil, SavedMinZoom = nil, SavedMaxZoom = nil, SavedCameraMode = nil }
 local function saveState()
     local lp = Players.LocalPlayer
     if not lp then return end
-    pcall(function()
-        FpsBypass.SavedCameraMode = lp.CameraMode
-    end)
-    pcall(function()
-        FpsBypass.SavedMinZoom = lp.CameraMinZoomDistance
-    end)
-    pcall(function()
-        FpsBypass.SavedMaxZoom = lp.CameraMaxZoomDistance
-    end)
-    FpsBypass.SavedTransparency = {}
+    pcall(function() T.FpsBypass.SavedCameraMode = lp.CameraMode end)
+    pcall(function() T.FpsBypass.SavedMinZoom = lp.CameraMinZoomDistance end)
+    pcall(function() T.FpsBypass.SavedMaxZoom = lp.CameraMaxZoomDistance end)
+    T.FpsBypass.SavedTransparency = {}
     local char = lp.Character
     if char then
         local h = char:FindFirstChildOfClass("Humanoid")
-        if h then
-            pcall(function()
-                FpsBypass.SavedCameraOffset = h.CameraOffset
-            end)
-        end
+        if h then pcall(function() T.FpsBypass.SavedCameraOffset = h.CameraOffset end) end
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                pcall(function()
-                    FpsBypass.SavedTransparency[part] = part.LocalTransparencyModifier
-                end)
-            end
+            if part:IsA("BasePart") then pcall(function() T.FpsBypass.SavedTransparency[part] = part.LocalTransparencyModifier end) end
         end
     end
 end
-
 local function applyState()
     local lp = Players.LocalPlayer
     if not lp then return end
@@ -13468,32 +13026,21 @@ local function applyState()
         lp.CameraMinZoomDistance = 0.5
         lp.CameraMaxZoomDistance = 128
     end)
-    if humanoid then
-        pcall(function()
-            humanoid.CameraOffset = Vector3.new(0, 0, 0)
-        end)
-    end
+    if humanoid then pcall(function() humanoid.CameraOffset = Vector3.new(0, 0, 0) end) end
     for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            pcall(function()
-                part.LocalTransparencyModifier = 0
-            end)
-        end
+        if part:IsA("BasePart") then pcall(function() part.LocalTransparencyModifier = 0 end) end
     end
 end
-
 local function installHook()
-    if FpsBypass.HookInstalled then return end
+    if T.FpsBypass.HookInstalled then return end
     local ok, mt = pcall(getrawmetatable, game)
     if not ok or type(mt) ~= "table" then return end
     local oldNewIndex = mt.__newindex
     if type(oldNewIndex) ~= "function" then return end
-    local ok2 = pcall(function()
-        setreadonly(mt, false)
-    end)
+    local ok2 = pcall(function() setreadonly(mt, false) end)
     if not ok2 then return end
     mt.__newindex = function(obj, prop, value)
-        if FpsBypass.Active then
+        if T.FpsBypass.Active then
             pcall(function()
                 if obj == Players.LocalPlayer then
                     if prop == "CameraMaxZoomDistance" then
@@ -13502,30 +13049,21 @@ local function installHook()
                     elseif prop == "CameraMinZoomDistance" then
                         local num = tonumber(value)
                         if num and num > 0.5 then value = 0.5 end
-                    elseif prop == "CameraMode" then
-                        value = Enum.CameraMode.Classic
-                    end
+                    elseif prop == "CameraMode" then value = Enum.CameraMode.Classic end
                 elseif prop == "CameraOffset" and typeof(obj) == "Instance" and obj:IsA("Humanoid") then
                     local lp = Players.LocalPlayer
-                    if lp and lp.Character and obj.Parent == lp.Character then
-                        value = Vector3.new(0, 0, 0)
-                    end
+                    if lp and lp.Character and obj.Parent == lp.Character then value = Vector3.new(0, 0, 0) end
                 elseif prop == "LocalTransparencyModifier" and typeof(obj) == "Instance" and obj:IsA("BasePart") then
                     local lp = Players.LocalPlayer
-                    if lp and lp.Character and obj:IsDescendantOf(lp.Character) then
-                        value = 0
-                    end
+                    if lp and lp.Character and obj:IsDescendantOf(lp.Character) then value = 0 end
                 end
             end)
         end
         return oldNewIndex(obj, prop, value)
     end
-    pcall(function()
-        setreadonly(mt, true)
-    end)
-    FpsBypass.HookInstalled = true
+    pcall(function() setreadonly(mt, true) end)
+    T.FpsBypass.HookInstalled = true
 end
-
 local function attach()
     saveState()
     installHook()
@@ -13534,8 +13072,8 @@ local function attach()
     local char = lp.Character or lp.CharacterAdded:Wait()
     local humanoid = char:WaitForChild("Humanoid", 5)
     applyState()
-    table.insert(FpsBypass.Connections, RunService.RenderStepped:Connect(function()
-        if not FpsBypass.Active then return end
+    table.insert(T.FpsBypass.Connections, RunService.RenderStepped:Connect(function()
+        if not T.FpsBypass.Active then return end
         pcall(function()
             if lp.CameraMaxZoomDistance < 128 then lp.CameraMaxZoomDistance = 128 end
             if lp.CameraMinZoomDistance > 0.5 then lp.CameraMinZoomDistance = 0.5 end
@@ -13543,124 +13081,68 @@ local function attach()
         end)
         if humanoid and humanoid.Parent then
             pcall(function()
-                if humanoid.CameraOffset ~= Vector3.new(0, 0, 0) then
-                    humanoid.CameraOffset = Vector3.new(0, 0, 0)
-                end
+                if humanoid.CameraOffset ~= Vector3.new(0, 0, 0) then humanoid.CameraOffset = Vector3.new(0, 0, 0) end
             end)
         end
     end))
-    table.insert(FpsBypass.Connections, char.DescendantAdded:Connect(function(desc)
-        if not FpsBypass.Active then return end
-        if desc:IsA("BasePart") then
-            task.defer(function()
-                pcall(function()
-                    desc.LocalTransparencyModifier = 0
-                end)
-            end)
-        end
+    table.insert(T.FpsBypass.Connections, char.DescendantAdded:Connect(function(desc)
+        if not T.FpsBypass.Active then return end
+        if desc:IsA("BasePart") then task.defer(function() pcall(function() desc.LocalTransparencyModifier = 0 end) end) end
     end))
-    table.insert(FpsBypass.Connections, lp.CharacterAdded:Connect(function()
-        if not FpsBypass.Active then return end
+    table.insert(T.FpsBypass.Connections, lp.CharacterAdded:Connect(function()
+        if not T.FpsBypass.Active then return end
         task.wait(0.5)
         applyState()
     end))
 end
-
 local function detach()
-    FpsBypass.Active = false
-    for _, conn in ipairs(FpsBypass.Connections) do
-        pcall(function()
-            conn:Disconnect()
-        end)
-    end
-    FpsBypass.Connections = {}
+    T.FpsBypass.Active = false
+    for _, conn in ipairs(T.FpsBypass.Connections) do pcall(function() conn:Disconnect() end) end
+    T.FpsBypass.Connections = {}
     local lp = Players.LocalPlayer
     if not lp then return end
+    pcall(function() if T.FpsBypass.SavedCameraMode ~= nil then lp.CameraMode = T.FpsBypass.SavedCameraMode end end)
     pcall(function()
-        if FpsBypass.SavedCameraMode ~= nil then
-            lp.CameraMode = FpsBypass.SavedCameraMode
-        end
-    end)
-    pcall(function()
-        lp.CameraMinZoomDistance = FpsBypass.SavedMinZoom or 0.5
-        lp.CameraMaxZoomDistance = FpsBypass.SavedMaxZoom or 0.5
+        lp.CameraMinZoomDistance = T.FpsBypass.SavedMinZoom or 0.5
+        lp.CameraMaxZoomDistance = T.FpsBypass.SavedMaxZoom or 0.5
     end)
     local char = lp.Character
     local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        pcall(function()
-            humanoid.CameraOffset = FpsBypass.SavedCameraOffset or Vector3.new(0, 0.2, -1.5)
-        end)
-    end
+    if humanoid then pcall(function() humanoid.CameraOffset = T.FpsBypass.SavedCameraOffset or Vector3.new(0, 0.2, -1.5) end) end
     if char then
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
-                local saved = FpsBypass.SavedTransparency[part]
+                local saved = T.FpsBypass.SavedTransparency[part]
                 pcall(function()
-                    if saved ~= nil then
-                        part.LocalTransparencyModifier = saved
-                    else
-                        part.LocalTransparencyModifier = 1
-                    end
+                    if saved ~= nil then part.LocalTransparencyModifier = saved else part.LocalTransparencyModifier = 1 end
                 end)
             end
         end
     end
-    FpsBypass.SavedTransparency = {}
-    FpsBypass.SavedCameraOffset = nil
-    FpsBypass.SavedMinZoom = nil
-    FpsBypass.SavedMaxZoom = nil
-    FpsBypass.SavedCameraMode = nil
+    T.FpsBypass.SavedTransparency = {}
+    T.FpsBypass.SavedCameraOffset = nil
+    T.FpsBypass.SavedMinZoom = nil
+    T.FpsBypass.SavedMaxZoom = nil
+    T.FpsBypass.SavedCameraMode = nil
 end
-
 KillerTab:Toggle({
     Title = "解除第一人称限制",
     Desc = "你可能会问为什么第三人称之后杀手会残疾缺两只手，这个是游戏作者问题不是我屎山问题",
     Value = false,
     Callback = function(state)
-        FpsBypass.Active = state
-        if state then
-            attach()
-        else
-            detach()
-        end
+        T.FpsBypass.Active = state
+        if state then attach() else detach() end
     end
 })
 
-VisualsTab:Toggle({
-    Title = "杀手靠近提醒",
-    Value = false,
-    Callback = function(state)
-        alertEnabled = state
-        if not alertEnabled then
-            updateAlertUi(math.huge)
-        end
-    end
-})
-VisualsTab:Toggle({
-    Title = "杀手靠近提醒提示音",
-    Value = false,
-    Callback = function(state)
-        alertSoundEnabled = state
-        if not alertSoundEnabled and alertSound then
-            pcall(function() alertSound:Stop() end)
-        end
-    end
-})
+VisualsTab:Toggle({ Title = "杀手靠近提醒", Value = false, Callback = function(state) T.alertEnabled = state; if not T.alertEnabled then updateAlertUi(math.huge) end end })
+VisualsTab:Toggle({ Title = "杀手靠近提醒提示音", Value = false, Callback = function(state) T.alertSoundEnabled = state; if not T.alertSoundEnabled and alertSound then pcall(function() alertSound:Stop() end) end end })
 VisualsTab:Slider({
     Title = "提醒范围",
-    Value = {
-        Min = 10,
-        Max = 100,
-        Default = 50,
-    },
+    Value = { Min = 10, Max = 100, Default = 50 },
     Callback = function(val)
-        if type(val) == "table" then
-            val = val.Value or val.Value2 or val[1]
-        end
-        if type(val) == "number" then
-            alertRadius = val
-        end
+        if type(val) == "table" then val = val.Value or val.Value2 or val[1] end
+        if type(val) == "number" then T.alertRadius = val end
     end
 })
 
@@ -13673,48 +13155,33 @@ local function getMap()
     return nil
 end
 
-local lastMapRef = nil
-local palletsFolderRef = nil
-local palletScanDirty = true
+T.lastMapRef = nil
+T.palletsFolderRef = nil
+T.palletScanDirty = true
 
 local function getPalletsFolder(map)
-    if not map then
-        palletsFolderRef = nil
-        return nil
-    end
-    if palletsFolderRef and palletsFolderRef.Parent == map then
-        return palletsFolderRef
-    end
+    if not map then T.palletsFolderRef = nil; return nil end
+    if T.palletsFolderRef and T.palletsFolderRef.Parent == map then return T.palletsFolderRef end
     for _, c in ipairs(map:GetChildren()) do
-        if c.Name == "Pallets" or c.Name == "pallets" then
-            palletsFolderRef = c
-            return c
-        end
+        if c.Name == "Pallets" or c.Name == "pallets" then T.palletsFolderRef = c; return c end
     end
-    palletsFolderRef = nil
+    T.palletsFolderRef = nil
     return nil
 end
 
 local function resetMapCaches()
-    proxInst = nil
-    proxChar = nil
-    lastPalletDropTime = 0
-    lastBreakPalletTime = 0
-    lastKickGenTime = 0
-    palletsFolderRef = nil
-    palletScanDirty = true
-    for k in pairs(knownGenerators) do
-        knownGenerators[k] = nil
-    end
-    lastFullScan = -math.huge
-    lastGlobalScan = -math.huge
+    T.proxInst = nil; T.proxChar = nil
+    T.lastPalletDropTime = 0; T.lastBreakPalletTime = 0; T.lastKickGenTime = 0
+    T.palletsFolderRef = nil; T.palletScanDirty = true
+    for k in pairs(T.knownGenerators) do T.knownGenerators[k] = nil end
+    T.lastFullScan = -math.huge; T.lastGlobalScan = -math.huge
     purgeAllVisuals()
 end
 
 local function checkMapChange()
     local m = getMap()
-    if m ~= lastMapRef then
-        lastMapRef = m
+    if m ~= T.lastMapRef then
+        T.lastMapRef = m
         resetMapCaches()
         return true
     end
@@ -13748,7 +13215,7 @@ local function inPerfect(lineRot, goalRot)
 end
 
 local function trySimulateClick()
-    if not clickModeSupported then return false end
+    if not T.clickModeSupported then return false end
     local fired = false
     pcall(function()
         local mob = PlayerGui:FindFirstChild("Survivor-mob")
@@ -13758,95 +13225,63 @@ local function trySimulateClick()
         local action = controls:FindFirstChild("action")
         if not action then return end
         for _, conn in pairs(getconnections(action.MouseButton1Down)) do
-            if conn.Fire then
-                conn:Fire()
-                fired = true
-            end
+            if conn.Fire then conn:Fire(); fired = true end
         end
     end)
     return fired
 end
 
 local function monitorLoop()
-    if monitorRunning then return end
-    monitorRunning = true
+    if T.monitorRunning then return end
+    T.monitorRunning = true
     task.spawn(function()
-        while running do
-            local sc = pending
-            if not sc then
-                task.wait(0.03)
-                continue
-            end
-            if os.clock() - pendingTime > 3 then
-                pending = nil
-                continue
-            end
+        while T.running do
+            local sc = T.pending
+            if not sc then task.wait(0.03); continue end
+            if os.clock() - T.pendingTime > 3 then T.pending = nil; continue end
             local ci = getCheckInterractable()
-            if not ci or not ci:GetAttribute("isRepairing") then
-                pending = nil
-                continue
-            end
+            if not ci or not ci:GetAttribute("isRepairing") then T.pending = nil; continue end
             if sc.repairRequestId ~= nil then
                 local cur = ci:GetAttribute("RepairRequestId")
-                if cur ~= nil and cur ~= sc.repairRequestId then
-                    pending = nil
-                    continue
-                end
+                if cur ~= nil and cur ~= sc.repairRequestId then T.pending = nil; continue end
             end
             local line, goal = getLineGoal()
-            if not line or not goal then
-                RunService.Heartbeat:Wait()
-                continue
-            end
+            if not line or not goal then RunService.Heartbeat:Wait(); continue end
             if inPerfect(line.Rotation, goal.Rotation) then
                 local clicked = trySimulateClick()
-                if not clicked then
+                if not clicked and T.skillCheckResultEvent then
                     pcall(function()
-                        skillCheckResultEvent:FireServer("success", 1, sc.generator, sc.point, sc.skillcheckId, sc.eventChar)
+                        T.skillCheckResultEvent:FireServer("success", 1, sc.generator, sc.point, sc.skillcheckId, sc.eventChar)
                     end)
                 end
-                firedCount = firedCount + 1
-                pending = nil
+                T.firedCount = T.firedCount + 1
+                T.pending = nil
             end
             RunService.Heartbeat:Wait()
         end
-        monitorRunning = false
+        T.monitorRunning = false
     end)
 end
 
-skillCheckEvent.OnClientEvent:Connect(function(generator, point, skillcheckId, eventChar, repairRequestId)
-    if generator then knownGenerators[generator] = true end
-    if not running then return end
-    pending = {
-        generator = generator,
-        point = point,
-        skillcheckId = skillcheckId,
-        eventChar = eventChar,
-        repairRequestId = repairRequestId,
-    }
-    pendingTime = os.clock()
-    monitorLoop()
-end)
+if T.skillCheckEvent then
+    T.skillCheckEvent.OnClientEvent:Connect(function(generator, point, skillcheckId, eventChar, repairRequestId)
+        if generator then T.knownGenerators[generator] = true end
+        if not T.running then return end
+        T.pending = { generator = generator, point = point, skillcheckId = skillcheckId, eventChar = eventChar, repairRequestId = repairRequestId }
+        T.pendingTime = os.clock()
+        monitorLoop()
+    end)
+end
 
 LocalPlayer.CharacterAdded:Connect(function()
-    pending = nil
-    proxInst = nil
-    proxChar = nil
-    lastPalletDropTime = 0
-    lastBreakPalletTime = 0
-    lastKickGenTime = 0
-    task.delay(0.1, function()
-        if running then monitorLoop() end
-    end)
+    T.pending = nil; T.proxInst = nil; T.proxChar = nil
+    T.lastPalletDropTime = 0; T.lastBreakPalletTime = 0; T.lastKickGenTime = 0
+    task.delay(0.1, function() if T.running then monitorLoop() end end)
 end)
 
 LocalPlayer.CharacterRemoving:Connect(function()
-    pending = nil
-    proxInst = nil
-    proxChar = nil
-    lastPalletDropTime = 0
-    lastBreakPalletTime = 0
-    lastKickGenTime = 0
+    T.pending = nil; T.proxInst = nil; T.proxChar = nil
+    T.lastPalletDropTime = 0; T.lastBreakPalletTime = 0; T.lastKickGenTime = 0
     stopPalletDropAnim()
 end)
 
@@ -13861,7 +13296,7 @@ local function ensureHighlight(obj, color, name)
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl:SetAttribute("_AutoHUD", true)
         hl.Parent = obj
-        activeVisuals[hl] = true
+        T.activeVisuals[hl] = true
     end
     hl.Enabled = true
     if hl.FillColor ~= color then hl.FillColor = color end
@@ -13874,7 +13309,7 @@ local function removeChild(obj, name)
     if not obj then return end
     local c = obj:FindFirstChild(name)
     if c and c:GetAttribute("_AutoHUD") == true then
-        activeVisuals[c] = nil
+        T.activeVisuals[c] = nil
         c:Destroy()
     end
 end
@@ -13893,12 +13328,12 @@ local function ensureProgressBB(gen, part, text)
         bb.MaxDistance = 1200
         bb:SetAttribute("_AutoHUD", true)
         bb.Parent = gen
-        activeVisuals[bb] = true
+        T.activeVisuals[bb] = true
         local lbl = Instance.new("TextLabel")
         lbl.Name = "Label"
         lbl.Size = UDim2.fromScale(1, 1)
         lbl.BackgroundTransparency = 1
-        lbl.TextColor3 = progressColor
+        lbl.TextColor3 = T.progressColor
         lbl.TextStrokeTransparency = 0.3
         lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
         lbl.Font = Enum.Font.GothamBold
@@ -13910,16 +13345,6 @@ local function ensureProgressBB(gen, part, text)
         if lbl and lbl.Text ~= text then lbl.Text = text end
     end
 end
-_G._AutoHUD_Dist = _G._AutoHUD_Dist or {
-    gen = true,
-    killer = true,
-    survivor = true,
-    pallet = true,
-    window = true,
-    hook = true,
-    trap = true,
-    pumpkin = true,
-}
 
 local DIST_BB_SIZE = UDim2.fromOffset(110, 16)
 local DIST_STUDS_OFFSET = Vector3.new(0, 2.4, 0)
@@ -13945,7 +13370,7 @@ local function ensureDistBB(obj, part, bbName, color, distText)
         bb.MaxDistance = 1200
         bb:SetAttribute("_AutoHUD", true)
         bb.Parent = obj
-        activeVisuals[bb] = true
+        T.activeVisuals[bb] = true
         local lbl = Instance.new("TextLabel")
         lbl.Name = "Label"
         lbl.Size = UDim2.fromScale(1, 1)
@@ -13966,6 +13391,48 @@ local function ensureDistBB(obj, part, bbName, color, distText)
     end
 end
 _G._AutoHUD_Dist.ensure = ensureDistBB
+
+local NAME_BB_SIZE = UDim2.fromOffset(110, 16)
+local NAME_STUDS_OFFSET = Vector3.new(0, 3.6, 0)
+local NAME_TEXTSIZE = 12
+
+local function ensureNameBB(obj, part, bbName, color, nameText)
+    if not obj or not part or not part.Parent then return end
+    local bb = obj:FindFirstChild(bbName)
+    if not bb or not bb:IsA("BillboardGui") or bb:GetAttribute("_AutoHUD") ~= true or bb.Adornee ~= part then
+        if bb then bb:Destroy() end
+        bb = Instance.new("BillboardGui")
+        bb.Name = bbName
+        bb.Adornee = part
+        bb.Size = NAME_BB_SIZE
+        bb.StudsOffset = NAME_STUDS_OFFSET
+        bb.AlwaysOnTop = true
+        bb.LightInfluence = 0
+        bb.MaxDistance = 1200
+        bb:SetAttribute("_AutoHUD", true)
+        bb.Parent = obj
+        T.activeVisuals[bb] = true
+        local lbl = Instance.new("TextLabel")
+        lbl.Name = "Label"
+        lbl.Size = UDim2.fromScale(1, 1)
+        lbl.BackgroundTransparency = 1
+        lbl.TextColor3 = color
+        lbl.TextStrokeTransparency = 0.3
+        lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = NAME_TEXTSIZE
+        lbl.Text = nameText
+        lbl.Parent = bb
+    else
+        local lbl = bb:FindFirstChild("Label")
+        if lbl then
+            if lbl.TextColor3 ~= color then lbl.TextColor3 = color end
+            if lbl.Text ~= nameText then lbl.Text = nameText end
+        end
+    end
+end
+_G._AutoHUD_Name.ensure = ensureNameBB
+
 local function findAnyPart(gen)
     if gen:IsA("BasePart") then return gen end
     if gen.PrimaryPart then return gen.PrimaryPart end
@@ -13974,69 +13441,56 @@ end
 
 local function normalizeProgress(raw)
     if typeof(raw) ~= "number" then return nil end
-    if raw > 0 and raw < 1 then
-        return math.floor(raw * 100)
-    end
+    if raw > 0 and raw < 1 then return math.floor(raw * 100) end
     return math.floor(raw)
 end
 
 local function fullScan()
-    lastFullScan = os.clock()
+    T.lastFullScan = os.clock()
     local map = getMap()
     local holder = map and map:FindFirstChild("newGenerators")
     if holder then
         for _, c in ipairs(holder:GetChildren()) do
-            if c:IsA("Model") or c:IsA("BasePart") then
-                knownGenerators[c] = true
-            end
+            if c:IsA("Model") or c:IsA("BasePart") then T.knownGenerators[c] = true end
         end
     end
-    if os.clock() - lastGlobalScan < GLOBAL_SCAN_INTERVAL then
-        return
-    end
-    lastGlobalScan = os.clock()
+    if os.clock() - T.lastGlobalScan < GLOBAL_SCAN_INTERVAL then return end
+    T.lastGlobalScan = os.clock()
     for _, d in ipairs(Workspace:GetDescendants()) do
-        if d:IsA("Model") and d:GetAttribute("RepairProgress") ~= nil then
-            knownGenerators[d] = true
-        end
+        if d:IsA("Model") and d:GetAttribute("RepairProgress") ~= nil then T.knownGenerators[d] = true end
     end
 end
 
 local function updateGenerators()
-    if os.clock() - lastFullScan > FULL_SCAN_INTERVAL then
-        fullScan()
-    end
+    if os.clock() - T.lastFullScan > FULL_SCAN_INTERVAL then fullScan() end
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
-    for gen in pairs(knownGenerators) do
+    for gen in pairs(T.knownGenerators) do
         if gen and gen.Parent then
             local progress = normalizeProgress(gen:GetAttribute("RepairProgress"))
             local done = progress ~= nil and progress >= 100
+            local p = findAnyPart(gen)
 
-            if espGeneratorOn and not done then
-                ensureHighlight(gen, genColor, GEN_HL)
-            else
-                removeChild(gen, GEN_HL)
-            end
+            if T.espGeneratorOn and not done then ensureHighlight(gen, T.genColor, GEN_HL) else removeChild(gen, GEN_HL) end
 
-            if espProgressOn and not done and progress ~= nil then
-                local p = findAnyPart(gen)
-                if p then
-                    ensureProgressBB(gen, p, string.format("[进度=%d]", progress))
-                end
+            if T.espProgressOn and not done and progress ~= nil and p then
+                ensureProgressBB(gen, p, string.format("[进度=%d]", progress))
             else
                 removeChild(gen, PROGRESS_NAME)
             end
 
-            if _G._AutoHUD_Dist.gen and myRoot and espGeneratorOn and not done then
-                local p = findAnyPart(gen)
-                if p then
-                    local d = calcDist(myRoot, p.Position)
-                    ensureDistBB(gen, p, "_AutoHUD_GenDist", genColor, "[距离：" .. d .. "]")
-                end
+            if _G._AutoHUD_Dist.gen and myRoot and T.espGeneratorOn and not done and p then
+                local d = calcDist(myRoot, p.Position)
+                ensureDistBB(gen, p, "_AutoHUD_GenDist", T.genColor, "[距离：" .. d .. "]")
             else
                 removeChild(gen, "_AutoHUD_GenDist")
+            end
+
+            if T.espGenNameOn and p and not done then
+                ensureNameBB(gen, p, "_AutoHUD_GenName", T.genColor, "发电机")
+            else
+                removeChild(gen, "_AutoHUD_GenName")
             end
         end
     end
@@ -14051,37 +13505,42 @@ local function updatePlayers()
             local humanoid = char and char:FindFirstChildOfClass("Humanoid")
             local alive = char and char.Parent and humanoid and humanoid.Health > 0
             if alive then
-                local isKiller = char:GetAttribute("MorphedKiller") ~= nil
-                    or player:GetAttribute("MorphedKiller") ~= nil
-                    or char:FindFirstChild("MorphedKiller") ~= nil
-                local showK = isKiller and espKillerOn
-                local showS = (not isKiller) and espSurvivorOn
+                local isKiller = char:GetAttribute("MorphedKiller") ~= nil or player:GetAttribute("MorphedKiller") ~= nil or char:FindFirstChild("MorphedKiller") ~= nil
+                local showK = isKiller and T.espKillerOn
+                local showS = (not isKiller) and T.espSurvivorOn
 
-                if showK then
-                    ensureHighlight(char, killerColor, KILLER_HL)
-                else
-                    removeChild(char, KILLER_HL)
-                end
-
-                if showS then
-                    ensureHighlight(char, survColor, SURV_HL)
-                else
-                    removeChild(char, SURV_HL)
-                end
+                if showK then ensureHighlight(char, T.killerColor, KILLER_HL) else removeChild(char, KILLER_HL) end
+                if showS then ensureHighlight(char, T.survColor, SURV_HL) else removeChild(char, SURV_HL) end
 
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if _G._AutoHUD_Dist.killer and showK and myRoot and hrp then
                     local d = calcDist(myRoot, hrp.Position)
-                    ensureDistBB(char, hrp, "_AutoHUD_KillerDist", killerColor, "[距离：" .. d .. "]")
+                    ensureDistBB(char, hrp, "_AutoHUD_KillerDist", T.killerColor, "[距离：" .. d .. "]")
                 else
                     removeChild(char, "_AutoHUD_KillerDist")
                 end
-
                 if _G._AutoHUD_Dist.survivor and showS and myRoot and hrp then
                     local d = calcDist(myRoot, hrp.Position)
-                    ensureDistBB(char, hrp, "_AutoHUD_SurvDist", survColor, "[距离：" .. d .. "]")
+                    ensureDistBB(char, hrp, "_AutoHUD_SurvDist", T.survColor, "[距离：" .. d .. "]")
                 else
                     removeChild(char, "_AutoHUD_SurvDist")
+                end
+
+                if T.espKillerNameOn and isKiller and hrp then
+                    ensureNameBB(char, hrp, "_AutoHUD_KillerName", T.killerColor, "杀手")
+                else
+                    removeChild(char, "_AutoHUD_KillerName")
+                end
+                if T.espSurvivorNameOn and not isKiller and hrp then
+                    ensureNameBB(char, hrp, "_AutoHUD_SurvivorName", T.survColor, "幸存者")
+                else
+                    removeChild(char, "_AutoHUD_SurvivorName")
+                end
+            else
+                if char then
+                    removeChild(char, KILLER_HL); removeChild(char, SURV_HL)
+                    removeChild(char, "_AutoHUD_KillerDist"); removeChild(char, "_AutoHUD_SurvDist")
+                    removeChild(char, "_AutoHUD_KillerName"); removeChild(char, "_AutoHUD_SurvivorName")
                 end
             end
         end
@@ -14090,28 +13549,18 @@ end
 
 local function getPalletTarget(pallet)
     local intact = pallet:FindFirstChild("Intact")
-    if intact then
-        if intact:IsA("Model") or intact:IsA("BasePart") then
-            return intact
-        end
-    end
+    if intact and (intact:IsA("Model") or intact:IsA("BasePart")) then return intact end
     local dropped = pallet:FindFirstChild("Dropped") or pallet:FindFirstChild("Broken")
-    if dropped then
-        if dropped:IsA("Model") or dropped:IsA("BasePart") then
-            return dropped
-        end
-    end
-    if pallet:IsA("Model") or pallet:IsA("BasePart") then
-        return pallet
-    end
+    if dropped and (dropped:IsA("Model") or dropped:IsA("BasePart")) then return dropped end
+    if pallet:IsA("Model") or pallet:IsA("BasePart") then return pallet end
     return nil
 end
 
 local function clearPalletVisuals()
-    for obj in pairs(activeVisuals) do
-        if obj.Name == PALLET_HL or obj.Name == "_AutoHUD_PalletDist" then
+    for obj in pairs(T.activeVisuals) do
+        if obj.Name == PALLET_HL or obj.Name == "_AutoHUD_PalletDist" or obj.Name == "_AutoHUD_PalletName" then
             pcall(function() obj:Destroy() end)
-            activeVisuals[obj] = nil
+            T.activeVisuals[obj] = nil
         end
     end
 end
@@ -14119,79 +13568,71 @@ end
 local function updatePallets()
     checkMapChange()
     local map = getMap()
-    if not map then
-        palletsFolderRef = nil
-        return
-    end
+    if not map then T.palletsFolderRef = nil; return end
     local pallets = getPalletsFolder(map)
     if not pallets then return end
-
-    if palletScanDirty then
-        palletScanDirty = false
+    if T.palletScanDirty then
+        T.palletScanDirty = false
         clearPalletVisuals()
     end
-
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     for _, pallet in ipairs(pallets:GetChildren()) do
         if not pallet.Parent then continue end
         local target = getPalletTarget(pallet)
         local intact = pallet:FindFirstChild("Intact")
-        if intact and intact ~= target and (intact:IsA("Model") or intact:IsA("BasePart")) then
-            removeChild(intact, PALLET_HL)
-        end
+        if intact and intact ~= target and (intact:IsA("Model") or intact:IsA("BasePart")) then removeChild(intact, PALLET_HL) end
         local dropped = pallet:FindFirstChild("Dropped") or pallet:FindFirstChild("Broken")
-        if dropped and dropped ~= target and (dropped:IsA("Model") or dropped:IsA("BasePart")) then
-            removeChild(dropped, PALLET_HL)
+        if dropped and dropped ~= target and (dropped:IsA("Model") or dropped:IsA("BasePart")) then removeChild(dropped, PALLET_HL) end
+        if pallet ~= target and (pallet:IsA("Model") or pallet:IsA("BasePart")) then removeChild(pallet, PALLET_HL) end
+
+        local p = target and findAnyPart(target)
+
+        if T.espPalletOn and target then
+            ensureHighlight(target, T.palletColor, PALLET_HL)
+        else
+            if target then removeChild(target, PALLET_HL) end
         end
-        if pallet ~= target and (pallet:IsA("Model") or pallet:IsA("BasePart")) then
-            removeChild(pallet, PALLET_HL)
-        end
-        if espPalletOn and target then
-            ensureHighlight(target, palletColor, PALLET_HL)
-            if _G._AutoHUD_Dist.pallet and myRoot then
-                local p = findAnyPart(target)
-                if p then
-                    local d = calcDist(myRoot, p.Position)
-                    ensureDistBB(pallet, p, "_AutoHUD_PalletDist", palletColor, "[距离：" .. d .. "]")
-                end
-            else
-                removeChild(pallet, "_AutoHUD_PalletDist")
-            end
-        elseif target then
-            removeChild(target, PALLET_HL)
+
+        if _G._AutoHUD_Dist.pallet and T.espPalletOn and myRoot and p then
+            local d = calcDist(myRoot, p.Position)
+            ensureDistBB(pallet, p, "_AutoHUD_PalletDist", T.palletColor, "[距离：" .. d .. "]")
+        else
             removeChild(pallet, "_AutoHUD_PalletDist")
+        end
+
+        if T.espPalletNameOn and p then
+            ensureNameBB(pallet, p, "_AutoHUD_PalletName", T.palletColor, "板子")
+        else
+            removeChild(pallet, "_AutoHUD_PalletName")
         end
     end
 end
-local windowCache = setmetatable({}, {__mode = "k"})
-local hookCache = setmetatable({}, {__mode = "k"})
-local lastWindowCacheScan = 0
-local lastHookCacheScan = 0
-local windowScanDirty = true
-local hookScanDirty = true
-local windowListenerInstalled = false
+
+T.windowCache = setmetatable({}, {__mode = "k"})
+T.hookCache = setmetatable({}, {__mode = "k"})
+T.lastWindowCacheScan = 0
+T.lastHookCacheScan = 0
+T.windowScanDirty = true
+T.hookScanDirty = true
+T.windowListenerInstalled = false
 
 local function refreshWindowCache()
-    for k in pairs(windowCache) do windowCache[k] = nil end
+    for k in pairs(T.windowCache) do T.windowCache[k] = nil end
     for _, obj in ipairs(Workspace:GetDescendants()) do
         local lower = string.lower(obj.Name)
         if string.find(lower, "window", 1, true) then
             for _, child in ipairs(obj:GetDescendants()) do
-                if child:IsA("BasePart") and string.lower(child.Name) == "inviswall" then
-                    windowCache[child] = true
-                end
+                if child:IsA("BasePart") and string.lower(child.Name) == "inviswall" then T.windowCache[child] = true end
             end
         end
     end
 end
 
 local function refreshHookCache()
-    for k in pairs(hookCache) do hookCache[k] = nil end
+    for k in pairs(T.hookCache) do T.hookCache[k] = nil end
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name == "Hook" then
-            hookCache[obj] = true
-        end
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name == "Hook" then T.hookCache[obj] = true end
     end
 end
 
@@ -14209,31 +13650,35 @@ local function ensureWindowBox(part, color)
         box.Transparency = 0.7
         box:SetAttribute("_AutoHUD", true)
         box.Parent = part
-        activeVisuals[box] = true
+        T.activeVisuals[box] = true
     end
     box.Size = part.Size + Vector3.new(0.05, 0.05, 0.05)
     box.Color3 = color
     box.Visible = true
 end
 
-local function applyAll(cache, color, hlName, isWindow, distName, distOn)
+local function applyAll(cache, color, hlName, isWindow, distName, distOn, nameName, nameOn)
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     for obj in pairs(cache) do
         if obj.Parent then
             if isWindow then
-                ensureWindowBox(obj, color)
+                if T.espWindowOn then ensureWindowBox(obj, color) else removeChild(obj, WINDOW_HL) end
             else
-                ensureHighlight(obj, color, hlName)
+                if T.espHookOn then ensureHighlight(obj, color, hlName) else removeChild(obj, hlName) end
             end
-            if distOn and myRoot and distName then
-                local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart", true)
-                if part then
-                    local d = calcDist(myRoot, part.Position)
-                    ensureDistBB(obj, part, distName, color, "[距离：" .. d .. "]")
-                end
+            local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart", true)
+            if distOn and myRoot and distName and part and (T.espWindowOn or T.espHookOn) then
+                local d = calcDist(myRoot, part.Position)
+                ensureDistBB(obj, part, distName, color, "[距离：" .. d .. "]")
             elseif distName then
                 removeChild(obj, distName)
+            end
+            if nameOn and nameName and part then
+                local nameText = isWindow and "窗户" or "钩子"
+                ensureNameBB(obj, part, nameName, color, nameText)
+            elseif nameName then
+                removeChild(obj, nameName)
             end
         else
             cache[obj] = nil
@@ -14242,111 +13687,84 @@ local function applyAll(cache, color, hlName, isWindow, distName, distOn)
 end
 
 local function ensureWindowListener()
-    if windowListenerInstalled then return end
-    windowListenerInstalled = true
+    if T.windowListenerInstalled then return end
+    T.windowListenerInstalled = true
     Workspace.DescendantAdded:Connect(function(obj)
-    if not espWindowOn and not espHookOn then return end
-    local lower = string.lower(obj.Name)
-    if string.find(lower, "window", 1, true) or lower == "inviswall" then
-        windowScanDirty = true
-    end
-    if obj.Name == "Hook" then
-        hookScanDirty = true
-    end
-end)
+        if not T.espWindowOn and not T.espHookOn and not T.espWindowNameOn and not T.espHookNameOn then return end
+        local lower = string.lower(obj.Name)
+        if string.find(lower, "window", 1, true) or lower == "inviswall" then T.windowScanDirty = true end
+        if obj.Name == "Hook" then T.hookScanDirty = true end
+    end)
     Workspace.DescendantRemoving:Connect(function(obj)
-        if windowCache[obj] then windowCache[obj] = nil end
-        if hookCache[obj] then hookCache[obj] = nil end
+        if T.windowCache[obj] then T.windowCache[obj] = nil end
+        if T.hookCache[obj] then T.hookCache[obj] = nil end
     end)
 end
 
 local function updateWindowsAndHooks()
-    if not espWindowOn and not espHookOn then return end
+    if not T.espWindowOn and not T.espHookOn and not T.espWindowNameOn and not T.espHookNameOn then return end
     ensureWindowListener()
     local now = os.clock()
 
-    if espWindowOn and (windowScanDirty or now - lastWindowCacheScan > 3) then
-        lastWindowCacheScan = now
-        windowScanDirty = false
+    if (T.espWindowOn or T.espWindowNameOn) and (T.windowScanDirty or now - T.lastWindowCacheScan > 3) then
+        T.lastWindowCacheScan = now
+        T.windowScanDirty = false
         refreshWindowCache()
     end
-
-    if espHookOn and (hookScanDirty or now - lastHookCacheScan > 3) then
-        lastHookCacheScan = now
-        hookScanDirty = false
+    if (T.espHookOn or T.espHookNameOn) and (T.hookScanDirty or now - T.lastHookCacheScan > 3) then
+        T.lastHookCacheScan = now
+        T.hookScanDirty = false
         refreshHookCache()
     end
 
-    if espWindowOn then
-    applyAll(windowCache, windowColor, WINDOW_HL, true, "_AutoHUD_WindowDist", _G._AutoHUD_Dist.window)
+    if T.espWindowOn or T.espWindowNameOn then
+        applyAll(T.windowCache, T.windowColor, WINDOW_HL, true, "_AutoHUD_WindowDist", _G._AutoHUD_Dist.window, "_AutoHUD_WindowName", T.espWindowNameOn)
+    end
+    if T.espHookOn or T.espHookNameOn then
+        applyAll(T.hookCache, T.hookColor, HOOK_HL, false, "_AutoHUD_HookDist", _G._AutoHUD_Dist.hook, "_AutoHUD_HookName", T.espHookNameOn)
+    end
 end
-if espHookOn then
-    applyAll(hookCache, hookColor, HOOK_HL, false, "_AutoHUD_HookDist", _G._AutoHUD_Dist.hook)
-end
-end
+
 local function forceRescan()
-    lastFullScan = -math.huge
-    lastGlobalScan = -math.huge
-    windowScanDirty = true
-    hookScanDirty = true
-    palletScanDirty = true
-    palletsFolderRef = nil
-    pcall(updateGenerators)
-    pcall(updatePlayers)
-    pcall(updatePallets)
-    pcall(updateWindowsAndHooks)
+    T.lastFullScan = -math.huge; T.lastGlobalScan = -math.huge
+    T.windowScanDirty = true; T.hookScanDirty = true; T.palletScanDirty = true; T.palletsFolderRef = nil
+    pcall(updateGenerators); pcall(updatePlayers); pcall(updatePallets); pcall(updateWindowsAndHooks)
 end
 
 Players.PlayerRemoving:Connect(function(player)
     local char = player.Character
     if char then
-        removeChild(char, KILLER_HL)
-        removeChild(char, SURV_HL)
+        removeChild(char, KILLER_HL); removeChild(char, SURV_HL)
+        removeChild(char, "_AutoHUD_KillerDist"); removeChild(char, "_AutoHUD_SurvDist")
+        removeChild(char, "_AutoHUD_KillerName"); removeChild(char, "_AutoHUD_SurvivorName")
     end
 end)
 
-task.spawn(function()
-    pcall(fullScan)
-    pcall(updateGenerators)
-    pcall(updatePlayers)
-    pcall(updatePallets)
-    while true do
-        task.wait(ESP_INTERVAL)
-        checkMapChange()
-        if espGeneratorOn or espProgressOn then
-            pcall(updateGenerators)
-        end
-        if espKillerOn or espSurvivorOn then
-            pcall(updatePlayers)
-        end
-        if espPalletOn then
-            pcall(updatePallets)
-        end
-        if espWindowOn or espHookOn then
-            pcall(updateWindowsAndHooks)
-        end
-    end
-end)
-
-local palletDropEvent = remotes:WaitForChild("Pallet"):WaitForChild("PalletDropEvent")
-
-local SurvivorProximity = nil
+T.palletDropEvent = nil
 pcall(function()
-    SurvivorProximity = require(ReplicatedStorage.Modules.Survivors.SurvivorProximity)
+    local pal = T.remotes and T.remotes:FindFirstChild("Pallet")
+    if pal then
+        T.palletDropEvent = pal:FindFirstChild("PalletDropEvent")
+        if not T.palletDropEvent then task.spawn(function() T.palletDropEvent = pal:WaitForChild("PalletDropEvent", 10) end) end
+    end
+end)
+
+T.SurvivorProximity = nil
+pcall(function()
+    T.SurvivorProximity = require(ReplicatedStorage.Modules.Survivors.SurvivorProximity)
 end)
 
 local PALLET_DROP_INTERVAL = 0.1
 local PALLET_DROP_COOLDOWN = 0.5
 local PALLET_DROP_STUCK_TIMEOUT = 2.0
-
 local PALLET_DROP_ANIM_ID = "rbxassetid://81486769001455"
-local palletDropAnimTrack = nil
+T.palletDropAnimTrack = nil
 
 local function stopPalletDropAnim()
-    if palletDropAnimTrack then
-        pcall(function() palletDropAnimTrack:Stop() end)
-        pcall(function() palletDropAnimTrack:Destroy() end)
-        palletDropAnimTrack = nil
+    if T.palletDropAnimTrack then
+        pcall(function() T.palletDropAnimTrack:Stop() end)
+        pcall(function() T.palletDropAnimTrack:Destroy() end)
+        T.palletDropAnimTrack = nil
     end
 end
 
@@ -14355,23 +13773,18 @@ local function playFallbackPalletDropAnim(char)
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
     local animator = hum:FindFirstChildOfClass("Animator")
-    if not animator then
-        animator = Instance.new("Animator")
-        animator.Parent = hum
-    end
+    if not animator then animator = Instance.new("Animator"); animator.Parent = hum end
     local anim = Instance.new("Animation")
     anim.AnimationId = PALLET_DROP_ANIM_ID
-    local ok, track = pcall(function()
-        return animator:LoadAnimation(anim)
-    end)
+    local ok, track = pcall(function() return animator:LoadAnimation(anim) end)
     anim:Destroy()
     if ok and track then
-        palletDropAnimTrack = track
+        T.palletDropAnimTrack = track
         track.Priority = Enum.AnimationPriority.Action
         pcall(function() track:Play(0.1) end)
         track.Stopped:Connect(function()
-            if palletDropAnimTrack == track then
-                palletDropAnimTrack = nil
+            if T.palletDropAnimTrack == track then
+                T.palletDropAnimTrack = nil
                 pcall(function() track:Destroy() end)
             end
         end)
@@ -14387,28 +13800,20 @@ local function scanNodeForUUID(node)
     if not node then return nil end
     local ok, attrs = pcall(function() return node:GetAttributes() end)
     if ok and attrs then
-        for _, v in pairs(attrs) do
-            if isUUIDString(v) then return v end
-        end
+        for _, v in pairs(attrs) do if isUUIDString(v) then return v end end
     end
     local kids = node:GetChildren()
     for _, c in ipairs(kids) do
-        if c:IsA("StringValue") and isUUIDString(c.Value) then
-            return c.Value
-        end
+        if c:IsA("StringValue") and isUUIDString(c.Value) then return c.Value end
     end
     for _, c in ipairs(kids) do
         if c:IsA("Model") or c:IsA("Folder") then
             local ok2, subAttrs = pcall(function() return c:GetAttributes() end)
             if ok2 and subAttrs then
-                for _, v in pairs(subAttrs) do
-                    if isUUIDString(v) then return v end
-                end
+                for _, v in pairs(subAttrs) do if isUUIDString(v) then return v end end
             end
             for _, sc in ipairs(c:GetChildren()) do
-                if sc:IsA("StringValue") and isUUIDString(sc.Value) then
-                    return sc.Value
-                end
+                if sc:IsA("StringValue") and isUUIDString(sc.Value) then return sc.Value end
             end
         end
     end
@@ -14429,9 +13834,7 @@ local function findPalletUUIDFromPoint(point)
         end
     end
     local node = point
-    while node and node.Name ~= "Pallets" and node.Name ~= "pallets" do
-        node = node.Parent
-    end
+    while node and node.Name ~= "Pallets" and node.Name ~= "pallets" do node = node.Parent end
     if node then
         for _, pallet in ipairs(node:GetChildren()) do
             found = scanNodeForUUID(pallet)
@@ -14442,22 +13845,14 @@ local function findPalletUUIDFromPoint(point)
 end
 
 local function getProximity(char, hrp, hum, scriptRef)
-    if proxInst and proxChar == char then
-        return proxInst
-    end
-    if not SurvivorProximity then return nil end
-    proxInst = SurvivorProximity.new({
-        useHealLookPriority = false,
-        checkPartDoingAction = true,
-        character = char,
-        humanoidRootPart = hrp,
-        humanoid = hum,
-        script = scriptRef,
-        player = LocalPlayer,
-        useHealVelocityCheck = true,
+    if T.proxInst and T.proxChar == char then return T.proxInst end
+    if not T.SurvivorProximity then return nil end
+    T.proxInst = T.SurvivorProximity.new({
+        useHealLookPriority = false, checkPartDoingAction = true, character = char,
+        humanoidRootPart = hrp, humanoid = hum, script = scriptRef, player = LocalPlayer, useHealVelocityCheck = true,
     })
-    proxChar = char
-    return proxInst
+    T.proxChar = char
+    return T.proxInst
 end
 
 local function getPalletDropPrompt()
@@ -14484,10 +13879,7 @@ local function findNearestPalletPoint(hrp, maxDist)
             local point = intact:FindFirstChild("PalletPointSlide")
             if point and point:IsA("BasePart") and point.Parent then
                 local d = (point.Position - pos).Magnitude
-                if d < bestDist then
-                    best = point
-                    bestDist = d
-                end
+                if d < bestDist then best = point; bestDist = d end
             end
         end
     end
@@ -14512,7 +13904,6 @@ local function isKillerChasingMe()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
     local myPos = hrp.Position
-
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local pChar = player.Character
@@ -14520,16 +13911,12 @@ local function isKillerChasingMe()
                 local pHum = pChar:FindFirstChildOfClass("Humanoid")
                 local pHrp = pChar:FindFirstChild("HumanoidRootPart")
                 if pHum and pHum.Health > 0 and pHrp then
-                    local isKiller = pChar:GetAttribute("MorphedKiller") ~= nil
-                        or player:GetAttribute("MorphedKiller") ~= nil
-                        or pChar:FindFirstChild("MorphedKiller") ~= nil
+                    local isKiller = pChar:GetAttribute("MorphedKiller") ~= nil or player:GetAttribute("MorphedKiller") ~= nil or pChar:FindFirstChild("MorphedKiller") ~= nil
                     if isKiller then
                         local dist = (pHrp.Position - myPos).Magnitude
                         if dist <= 13 then
                             local dirToMe = (myPos - pHrp.Position).Unit
-                            if pHrp.CFrame.LookVector:Dot(dirToMe) > 0.5 then
-                                return true
-                            end
+                            if pHrp.CFrame.LookVector:Dot(dirToMe) > 0.5 then return true end
                         end
                     end
                 end
@@ -14540,13 +13927,11 @@ local function isKillerChasingMe()
 end
 
 local function tryAutoPalletDrop()
-    if not autoPalletDropOn then return end
+    if not T.autoPalletDropOn then return end
     if not isKillerChasingMe() then return end
-
     checkMapChange()
     local now = os.clock()
-    if now - lastPalletDropTime < PALLET_DROP_COOLDOWN then return end
-
+    if now - T.lastPalletDropTime < PALLET_DROP_COOLDOWN then return end
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -14554,103 +13939,56 @@ local function tryAutoPalletDrop()
     if not hrp or not hum then return end
     if hum.Health <= 50 then return end
     if char:GetAttribute("IsHooked") or char:GetAttribute("IsCarried") then return end
-
     local scriptRef = script
     if scriptRef:GetAttribute("isDroppingPallet") then
-        if now - lastPalletDropTime > PALLET_DROP_STUCK_TIMEOUT then
-            pcall(function() scriptRef:SetAttribute("isDroppingPallet", false) end)
-        else
-            return
-        end
+        if now - T.lastPalletDropTime > PALLET_DROP_STUCK_TIMEOUT then pcall(function() scriptRef:SetAttribute("isDroppingPallet", false) end) else return end
     end
     if hrp:HasTag("doing action") then
-        if now - lastPalletDropTime > PALLET_DROP_STUCK_TIMEOUT then
-            pcall(function() hrp:RemoveTag("doing action") end)
-        else
-            return
-        end
+        if now - T.lastPalletDropTime > PALLET_DROP_STUCK_TIMEOUT then pcall(function() hrp:RemoveTag("doing action") end) else return end
     end
-    if palletDropAnimTrack and palletDropAnimTrack.IsPlaying then return end
+    if T.palletDropAnimTrack and T.palletDropAnimTrack.IsPlaying then return end
 
     local point = nil
     local prox = getProximity(char, hrp, hum, scriptRef)
     if prox then
         pcall(function() prox:scan(scriptRef) end)
         local pstate = prox.state
-        if pstate then
-            point = pstate.palletDropPoint
-        end
+        if pstate then point = pstate.palletDropPoint end
     end
-    if not point or not point:IsA("BasePart") or not point.Parent then
-        point = findNearestPalletPoint(hrp, 8)
-    end
+    if not point or not point:IsA("BasePart") or not point.Parent then point = findNearestPalletPoint(hrp, 8) end
     if not point or not point:IsA("BasePart") then return end
-
     if not isPalletPointValid(point) then
         point = findNearestPalletPoint(hrp, 8)
         if not point then return end
     end
-
-    if SurvivorActions and prox then
-        lastPalletDropTime = now
+    if T.SurvivorActions and prox then
+        T.lastPalletDropTime = now
         local pstate = prox.state
         local ctx = {
-            player = LocalPlayer,
-            character = char,
-            humanoid = hum,
-            humanoidRootPart = hrp,
-            script = scriptRef,
-            prompts = { palletDrop = getPalletDropPrompt() },
-            frame = nil,
-            progressFrame = nil,
-            proximity = prox,
-            startSelfUnhookTween = function() end,
-            cancelSelfUnhookTween = function() end,
-            startCooldown = function() end,
-            getSprintFlag = function() return false end,
-            state = pstate,
+            player = LocalPlayer, character = char, humanoid = hum, humanoidRootPart = hrp, script = scriptRef,
+            prompts = { palletDrop = getPalletDropPrompt() }, frame = nil, progressFrame = nil, proximity = prox,
+            startSelfUnhookTween = function() end, cancelSelfUnhookTween = function() end, startCooldown = function() end,
+            getSprintFlag = function() return false end, state = pstate,
         }
-        local ok = pcall(function()
-            SurvivorActions.startPalletDrop(ctx, point)
-        end)
-        if ok then
-            return
-        end
+        local ok = pcall(function() T.SurvivorActions.startPalletDrop(ctx, point) end)
+        if ok then return end
     end
-
     local uuid = findPalletUUIDFromPoint(point)
     if not uuid then return end
-
     local dirVec = point.Position - hrp.Position
     dirVec = Vector3.new(dirVec.X, 0, dirVec.Z)
-    if dirVec.Magnitude > 0.001 then
-        dirVec = dirVec.Unit
-    end
-
-    lastPalletDropTime = now
+    if dirVec.Magnitude > 0.001 then dirVec = dirVec.Unit end
+    T.lastPalletDropTime = now
     pcall(function() scriptRef:SetAttribute("isDroppingPallet", true) end)
     playFallbackPalletDropAnim(char)
-    pcall(function()
-        palletDropEvent:FireServer(point, hrp.Position, dirVec, uuid, char)
-    end)
-    task.delay(1.2, function()
-        pcall(function() scriptRef:SetAttribute("isDroppingPallet", false) end)
-    end)
+    if not T.palletDropEvent then return end
+    pcall(function() T.palletDropEvent:FireServer(point, hrp.Position, dirVec, uuid, char) end)
+    task.delay(1.2, function() pcall(function() scriptRef:SetAttribute("isDroppingPallet", false) end) end)
 end
-
-task.spawn(function()
-    while true do
-        task.wait(PALLET_DROP_INTERVAL)
-        if autoPalletDropOn then
-            pcall(tryAutoPalletDrop)
-        end
-    end
-end)
 
 local AUTO_BREAK_INTERVAL = 0.1
 local AUTO_BREAK_COOLDOWN = 1.2
 local AUTO_BREAK_MAX_DIST = 10
-
 local AUTO_KICK_INTERVAL = 0.1
 local AUTO_KICK_COOLDOWN = 1.0
 local AUTO_KICK_MAX_DIST = 12
@@ -14658,9 +13996,7 @@ local AUTO_KICK_MAX_DIST = 12
 local function generateGUID()
     if HttpService and HttpService.GenerateGUID then
         local ok, g = pcall(function() return HttpService:GenerateGUID(false) end)
-        if ok and type(g) == "string" then
-            return g
-        end
+        if ok and type(g) == "string" then return g end
     end
     local template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
     return string.gsub(template, "[xy]", function(c)
@@ -14676,27 +14012,20 @@ local function isLocalPlayerKiller()
         return team ~= nil and team.Name == "Killer"
     end
     local mk = char:GetAttribute("MorphedKiller")
-    if mk ~= nil and mk ~= false then
-        return true
-    end
+    if mk ~= nil and mk ~= false then return true end
     local pmk = LocalPlayer:GetAttribute("MorphedKiller")
-    if pmk ~= nil and pmk ~= false then
-        return true
-    end
+    if pmk ~= nil and pmk ~= false then return true end
     local team = LocalPlayer.Team
-    if team and team.Name == "Killer" then
-        return true
-    end
+    if team and team.Name == "Killer" then return true end
     return false
 end
 
 local function tryAutoBreakPallet()
-    if not autoBreakPalletOn then return end
+    if not T.autoBreakPalletOn then return end
     checkMapChange()
-    if not destroyGlobalEvent or not palletBreakCommitEvent then return end
+    if not T.destroyGlobalEvent or not T.palletBreakCommitEvent then return end
     local now = os.clock()
-    if now - lastBreakPalletTime < AUTO_BREAK_COOLDOWN then return end
-
+    if now - T.lastBreakPalletTime < AUTO_BREAK_COOLDOWN then return end
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -14705,50 +14034,27 @@ local function tryAutoBreakPallet()
     if hum.Health <= 0 then return end
     if char:GetAttribute("IsCarried") or char:GetAttribute("IsHooked") then return end
     if not isLocalPlayerKiller() then return end
-
     local point = findNearestPalletPoint(hrp, AUTO_BREAK_MAX_DIST)
     if not point then return end
-
-    lastBreakPalletTime = now
+    T.lastBreakPalletTime = now
     local guid = generateGUID()
-
-    pcall(function()
-        destroyGlobalEvent:FireServer(point, guid, char)
-    end)
-
+    pcall(function() T.destroyGlobalEvent:FireServer(point, guid, char) end)
     task.delay(0.35, function()
         if not isPalletPointValid(point) then return end
         if not LocalPlayer.Character or LocalPlayer.Character ~= char then return end
-        pcall(function()
-            palletBreakCommitEvent:FireServer(point, guid, char)
-        end)
-        if palletBreakMarkerEvent then
-            task.delay(0.05, function()
-                pcall(function()
-                    palletBreakMarkerEvent:FireServer(guid, char)
-                end)
-            end)
+        pcall(function() T.palletBreakCommitEvent:FireServer(point, guid, char) end)
+        if T.palletBreakMarkerEvent then
+            task.delay(0.05, function() pcall(function() T.palletBreakMarkerEvent:FireServer(guid, char) end) end)
         end
     end)
 end
-
-task.spawn(function()
-    while true do
-        task.wait(AUTO_BREAK_INTERVAL)
-        if autoBreakPalletOn then
-            pcall(tryAutoBreakPallet)
-        end
-    end
-end)
 
 local function findNearestGeneratorPoint(hrp, maxDist)
     local map = getMap()
     if not map then return nil end
     local gens = map:FindFirstChild("Generators") or map:FindFirstChild("generators") or map:FindFirstChild("newGenerators")
-
     local best, bestDist = nil, maxDist
     local pos = hrp.Position
-
     local function checkGen(gen)
         local point = gen:FindFirstChild("GeneratorPoint2") or gen:FindFirstChild("GeneratorPoint")
         if point and point:IsA("BasePart") and point.Parent then
@@ -14756,20 +14062,11 @@ local function findNearestGeneratorPoint(hrp, maxDist)
             local kicks = gen:GetAttribute("kickcount") or 0
             if prog > 0 and prog < 100 and kicks <= 8 then
                 local d = (point.Position - pos).Magnitude
-                if d < bestDist then
-                    best = point
-                    bestDist = d
-                end
+                if d < bestDist then best = point; bestDist = d end
             end
         end
     end
-
-    if gens then
-        for _, gen in ipairs(gens:GetChildren()) do
-            checkGen(gen)
-        end
-    end
-
+    if gens then for _, gen in ipairs(gens:GetChildren()) do checkGen(gen) end end
     if not best then
         local tagged = CollectionService:GetTagged("GeneratorPoint")
         for _, point in ipairs(tagged) do
@@ -14779,25 +14076,20 @@ local function findNearestGeneratorPoint(hrp, maxDist)
                 local kicks = gen:GetAttribute("kickcount") or 0
                 if prog > 0 and prog < 100 and kicks <= 8 then
                     local d = (point.Position - pos).Magnitude
-                    if d < bestDist then
-                        best = point
-                        bestDist = d
-                    end
+                    if d < bestDist then best = point; bestDist = d end
                 end
             end
         end
     end
-
     return best, bestDist
 end
 
 local function tryAutoKickGen()
-    if not autoKickGenOn then return end
+    if not T.autoKickGenOn then return end
     checkMapChange()
-    if not breakGenEvent or not breakGenCommitEvent then return end
+    if not T.breakGenEvent or not T.breakGenCommitEvent then return end
     local now = os.clock()
-    if now - lastKickGenTime < AUTO_KICK_COOLDOWN then return end
-
+    if now - T.lastKickGenTime < AUTO_KICK_COOLDOWN then return end
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -14806,101 +14098,85 @@ local function tryAutoKickGen()
     if hum.Health <= 0 then return end
     if char:GetAttribute("IsCarried") or char:GetAttribute("IsHooked") then return end
     if not isLocalPlayerKiller() then return end
-
     local point = findNearestGeneratorPoint(hrp, AUTO_KICK_MAX_DIST)
     if not point then return end
-
-    lastKickGenTime = now
+    T.lastKickGenTime = now
     local guid = generateGUID()
-
-    pcall(function()
-        breakGenEvent:FireServer(point, guid, char)
-    end)
-
+    pcall(function() T.breakGenEvent:FireServer(point, guid, char) end)
     task.delay(0.35, function()
         if not point or not point.Parent then return end
         if not LocalPlayer.Character or LocalPlayer.Character ~= char then return end
-        pcall(function()
-            breakGenCommitEvent:FireServer(point, guid, char)
-        end)
-        if breakGenMarkerEvent then
-            task.delay(0.05, function()
-                pcall(function()
-                    breakGenMarkerEvent:FireServer(point, guid, char, "Break")
-                end)
-            end)
+        pcall(function() T.breakGenCommitEvent:FireServer(point, guid, char) end)
+        if T.breakGenMarkerEvent then
+            task.delay(0.05, function() pcall(function() T.breakGenMarkerEvent:FireServer(point, guid, char, "Break") end) end)
         end
     end)
 end
 
 task.spawn(function()
     while true do
+        task.wait(PALLET_DROP_INTERVAL)
+        if T.autoPalletDropOn then pcall(tryAutoPalletDrop) end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(AUTO_BREAK_INTERVAL)
+        if T.autoBreakPalletOn then pcall(tryAutoBreakPallet) end
+    end
+end)
+
+task.spawn(function()
+    while true do
         task.wait(AUTO_KICK_INTERVAL)
-        if autoKickGenOn then
-            pcall(tryAutoKickGen)
-        end
+        if T.autoKickGenOn then pcall(tryAutoKickGen) end
     end
 end)
 
 local function playAlertSound()
-    if not alertSoundEnabled then return end
-    if not alertSound then return end
-    pcall(function()
-        alertSound:Stop()
-        alertSound:Play()
-    end)
+    if not T.alertSoundEnabled or not alertSound then return end
+    pcall(function() alertSound:Stop(); alertSound:Play() end)
 end
 
 local function updateAlertUi(dist)
-    local show = alertEnabled and (not isLocalPlayerKiller()) and dist <= alertRadius
+    local show = T.alertEnabled and (not isLocalPlayerKiller()) and dist <= T.alertRadius
     if show then
-        local span = alertRadius - 5
+        local span = T.alertRadius - 5
         if span <= 0 then span = 1 end
         local t = math.clamp((dist - 5) / span, 0, 1)
         alertLabel.TextColor3 = Color3.new(1, t, t)
         alertLabel.Text = string.format("杀手在你的%d范围内", math.floor(dist + 0.5))
-        if not alertActive then
-            alertActive = true
+        if not T.alertActive then
+            T.alertActive = true
             alertFrame.Visible = true
-            alertFrame.Position = hidePos
+            alertFrame.Position = T.hidePos
             playAlertSound()
-            if alertTween then alertTween:Cancel() end
-            alertTween = TweenService:Create(alertFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                Position = targetPos
-            })
-            alertTween:Play()
+            if T.alertTween then T.alertTween:Cancel() end
+            T.alertTween = TweenService:Create(alertFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = T.targetPos })
+            T.alertTween:Play()
         else
             alertFrame.Visible = true
-            if alertFrame.Position ~= targetPos and alertTween == nil then
-                alertFrame.Position = targetPos
-            end
+            if alertFrame.Position ~= T.targetPos and T.alertTween == nil then alertFrame.Position = T.targetPos end
         end
     else
-        if alertActive then
-            alertActive = false
-            if alertTween then alertTween:Cancel() end
-            alertTween = TweenService:Create(alertFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                Position = hidePos
-            })
-            alertTween:Play()
-            task.delay(0.3, function()
-                if not alertActive then
-                    alertFrame.Visible = false
-                end
-            end)
+        if T.alertActive then
+            T.alertActive = false
+            if T.alertTween then T.alertTween:Cancel() end
+            T.alertTween = TweenService:Create(alertFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = T.hidePos })
+            T.alertTween:Play()
+            task.delay(0.3, function() if not T.alertActive then alertFrame.Visible = false end end)
         else
             alertFrame.Visible = false
         end
     end
 end
 
-    
-
 task.spawn(function()
     while true do
         task.wait(0.1)
         pcall(function()
-            if alertEnabled and not isLocalPlayerKiller() then
+            if T.alertEnabled and not isLocalPlayerKiller() then
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if hrp then
@@ -14918,9 +14194,7 @@ task.spawn(function()
                                     local isK = (mk ~= nil and mk ~= false) or pChar:FindFirstChild("MorphedKiller") ~= nil
                                     if isK then
                                         local d = (pHrp.Position - myPos).Magnitude
-                                        if d < nearestDist then
-                                            nearestDist = d
-                                        end
+                                        if d < nearestDist then nearestDist = d end
                                     end
                                 end
                             end
@@ -14940,35 +14214,28 @@ end)
 Workspace.ChildAdded:Connect(function(c)
     if c.Name == "Map" then
         task.defer(function()
-            palletsFolderRef = nil
-            palletScanDirty = true
+            T.palletsFolderRef = nil
+            T.palletScanDirty = true
             checkMapChange()
-            if espPalletOn then pcall(updatePallets) end
+            if T.espPalletOn then pcall(updatePallets) end
         end)
     end
 end)
-
 Workspace.ChildRemoved:Connect(function(c)
-    if c.Name == "Map" then
-        task.defer(checkMapChange)
-    end
+    if c.Name == "Map" then task.defer(checkMapChange) end
 end)
+
 local function getTrapList()
     local result = {}
     local seen = {}
     local map = Workspace:FindFirstChild("Map")
     if map then
         for _, obj in ipairs(map:GetDescendants()) do
-            if obj.Name == "BearTrap" then
-                result[#result + 1] = obj
-                seen[obj] = true
-            end
+            if obj.Name == "BearTrap" then result[#result + 1] = obj; seen[obj] = true end
         end
     end
     for _, obj in ipairs(CollectionService:GetTagged("BearTrap")) do
-        if not seen[obj] and obj.Parent then
-            result[#result + 1] = obj
-        end
+        if not seen[obj] and obj.Parent then result[#result + 1] = obj end
     end
     return result
 end
@@ -15000,9 +14267,7 @@ local function findNearestArmedTrap()
             local hb = trap:FindFirstChild("hitbox") or trap.PrimaryPart
             if hb then
                 local d = (root.Position - hb.Position).Magnitude
-                if d <= bd and canReachTrap(char, trap) then
-                    best, bd = trap, d
-                end
+                if d <= bd and T.canReachTrap(char, trap) then best, bd = trap, d end
             end
         end
     end
@@ -15027,176 +14292,151 @@ local function setDisarmAction(on)
 end
 
 function stopTrapDisarm(reason)
-    if not disarming then return end
-    disarming = false
-    disarmToken = disarmToken + 1
-    disarmCooldownUntil = os.clock() + 0.5
-    if activeDisarmTrack then
-        pcall(function() activeDisarmTrack:Stop() end)
-        activeDisarmTrack = nil
-    end
+    if not T.disarming then return end
+    T.disarming = false
+    T.disarmToken = T.disarmToken + 1
+    T.disarmCooldownUntil = os.clock() + 0.5
+    if T.activeDisarmTrack then pcall(function() T.activeDisarmTrack:Stop() end); T.activeDisarmTrack = nil end
     setDisarmAction(false)
-    if reason then
-        disarmEvent:FireServer(reason)
-    end
+    if reason and T.disarmEvent then pcall(function() T.disarmEvent:FireServer(reason) end) end
 end
 
 local function startTrapDisarm(trap)
-    if disarming or not trap then return end
-    if os.clock() < disarmCooldownUntil then return end
+    if T.disarming or not trap then return end
+    if os.clock() < T.disarmCooldownUntil then return end
     if not trapEligible() then return end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if root and root:HasTag("doing action") then return end
-    if not canReachTrap(char, trap) then return end
-
-    disarming = true
-    disarmToken = disarmToken + 1
-    local myToken = disarmToken
-    disarmEvent:FireServer("begin", trap)
+    if not T.canReachTrap(char, trap) then return end
+    T.disarming = true
+    T.disarmToken = T.disarmToken + 1
+    local myToken = T.disarmToken
+    if not T.disarmEvent then return end
+    T.disarmEvent:FireServer("begin", trap)
     setDisarmAction(true)
-
     local hum = char:FindFirstChildOfClass("Humanoid")
     local animator = hum and (hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator", 5))
     if animator then
         local anim = Instance.new("Animation")
         anim.AnimationId = "rbxassetid://124496375630894"
-        activeDisarmTrack = animator:LoadAnimation(anim)
-        activeDisarmTrack.Looped = true
-        activeDisarmTrack:Play()
+        T.activeDisarmTrack = animator:LoadAnimation(anim)
+        T.activeDisarmTrack.Looped = true
+        T.activeDisarmTrack:Play()
     end
-
     local startTime = os.clock()
     task.spawn(function()
-        while disarming and disarmToken == myToken do
+        while T.disarming and T.disarmToken == myToken do
             local c = LocalPlayer.Character
-            if not c or not trapEligible() then
-                stopTrapDisarm("cancel")
-                break
-            end
-            c:SetAttribute("Rooted", true)
-            c:SetAttribute("overridelookscript", true)
+            if not c or not trapEligible() then stopTrapDisarm("cancel"); break end
+            c:SetAttribute("Rooted", true); c:SetAttribute("overridelookscript", true)
             local r = c:FindFirstChild("HumanoidRootPart")
             local hb = trap:FindFirstChild("hitbox") or trap.PrimaryPart
-            if not r or not hb or (r.Position - hb.Position).Magnitude > 6 then
-                stopTrapDisarm("cancel")
-                break
-            end
-            if not trap.Parent or not trap:GetAttribute("Armed") or trap:GetAttribute("Triggered") then
-                stopTrapDisarm("cancel")
-                break
-            end
-            if not canReachTrap(c, trap) then
-                stopTrapDisarm("cancel")
-                break
-            end
+            if not r or not hb or (r.Position - hb.Position).Magnitude > 6 then stopTrapDisarm("cancel"); break end
+            if not trap.Parent or not trap:GetAttribute("Armed") or trap:GetAttribute("Triggered") then stopTrapDisarm("cancel"); break end
+            if not T.canReachTrap(c, trap) then stopTrapDisarm("cancel"); break end
             if os.clock() - startTime >= 5 then
-                disarming = false
-                disarmToken = disarmToken + 1
-                if activeDisarmTrack then
-                    pcall(function() activeDisarmTrack:Stop() end)
-                    activeDisarmTrack = nil
-                end
-                disarmEvent:FireServer("commit")
+                T.disarming = false
+                T.disarmToken = T.disarmToken + 1
+                if T.activeDisarmTrack then pcall(function() T.activeDisarmTrack:Stop() end); T.activeDisarmTrack = nil end
+                if T.disarmEvent then pcall(function() T.disarmEvent:FireServer("commit") end) end
                 setDisarmAction(false)
                 return
             end
             RunService.Heartbeat:Wait()
         end
-        if activeDisarmTrack then
-            pcall(function() activeDisarmTrack:Stop() end)
-            activeDisarmTrack = nil
+        if T.activeDisarmTrack then pcall(function() T.activeDisarmTrack:Stop() end); T.activeDisarmTrack = nil end
+    end)
+end
+
+if T.disarmEvent then
+    T.disarmEvent.OnClientEvent:Connect(function(msg)
+        if msg ~= "rejected" then return end
+        if T.disarming then
+            T.disarming = false
+            T.disarmToken = T.disarmToken + 1
+            T.disarmCooldownUntil = os.clock() + 0.5
+            if T.activeDisarmTrack then pcall(function() T.activeDisarmTrack:Stop() end); T.activeDisarmTrack = nil end
+            setDisarmAction(false)
+            T.disarmEvent:FireServer("cancel")
+        else
+            local char = LocalPlayer.Character
+            if char and not char:GetAttribute("Trapped") then char:SetAttribute("overridelookscript", false) end
         end
     end)
 end
 
-disarmEvent.OnClientEvent:Connect(function(msg)
-    if msg ~= "rejected" then return end
-    if disarming then
-        disarming = false
-        disarmToken = disarmToken + 1
-        disarmCooldownUntil = os.clock() + 0.5
-        if activeDisarmTrack then
-            pcall(function() activeDisarmTrack:Stop() end)
-            activeDisarmTrack = nil
-        end
-        setDisarmAction(false)
-        disarmEvent:FireServer("cancel")
-    else
-        local char = LocalPlayer.Character
-        if char and not char:GetAttribute("Trapped") then
-            char:SetAttribute("overridelookscript", false)
-        end
-    end
-end)
-
 task.spawn(function()
     while true do
-        if autoDisarmOn and not disarming then
+        if T.autoDisarmOn and not T.disarming then
             local trap = findNearestArmedTrap()
-            if trap and trapEligible() then
-                startTrapDisarm(trap)
-            end
+            if trap and trapEligible() then startTrapDisarm(trap) end
         end
         task.wait(0.05)
     end
 end)
 
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        local list = getTrapList()
-        for _, trap in ipairs(list) do
-            if not trap or not trap.Parent then continue end
-            local hl = trapHighlightCache[trap]
-if espTrapOn then
-    if not hl or hl.Parent ~= trap or hl.Adornee ~= trap then
-        if hl then pcall(function() hl:Destroy() end) end
-        local newHl = Instance.new("Highlight")
-        newHl.Name = "_AutoTrapHL"
-        newHl.Adornee = trap
-        newHl.FillColor = trapESPColor
-        newHl.FillTransparency = trapESPFillTransparency
-        newHl.OutlineColor = trapESPColor
-        newHl.OutlineTransparency = 0
-        newHl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        newHl.Parent = trap
-        trapHighlightCache[trap] = newHl
-    else
-        if hl.FillColor ~= trapESPColor then hl.FillColor = trapESPColor end
-        if hl.OutlineColor ~= trapESPColor then hl.OutlineColor = trapESPColor end
-        if hl.FillTransparency ~= trapESPFillTransparency then hl.FillTransparency = trapESPFillTransparency end
-    end
-    if _G._AutoHUD_Dist.trap then
-        local myChar = LocalPlayer.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        local hb = trap:FindFirstChild("hitbox") or trap.PrimaryPart or (trap:IsA("BasePart") and trap) or trap:FindFirstChildWhichIsA("BasePart", true)
-        if myRoot and hb then
-            local d = calcDist(myRoot, hb.Position)
-            ensureDistBB(trap, hb, "_AutoHUD_TrapDist", trapESPColor, "[距离：" .. d .. "]")
-        end
-    else
-        removeChild(trap, "_AutoHUD_TrapDist")
-    end
-elseif hl then
-    pcall(function() hl:Destroy() end)
-    trapHighlightCache[trap] = nil
-    removeChild(trap, "_AutoHUD_TrapDist")
-end
-        end
-        if not espTrapOn then
-            for trap, hl in pairs(trapHighlightCache) do
-                if hl then pcall(function() hl:Destroy() end) end
-                trapHighlightCache[trap] = nil
+local function updateTraps()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local seen = {}
+    for _, trap in ipairs(getTrapList()) do
+        if trap and trap.Parent then
+            seen[trap] = true
+            local hl = T.trapHighlightCache[trap]
+            local part = trap:FindFirstChild("hitbox") or trap.PrimaryPart or (trap:IsA("BasePart") and trap) or trap:FindFirstChildWhichIsA("BasePart", true)
+            if T.espTrapOn then
+                if not hl or hl.Parent ~= trap or hl.Adornee ~= trap or hl:GetAttribute("_AutoHUD") ~= true then
+                    if hl then pcall(function() hl:Destroy() end) end
+                    hl = Instance.new("Highlight")
+                    hl.Name = "_AutoHUD_TrapHL"
+                    hl.Adornee = trap
+                    hl.FillColor = T.trapESPColor
+                    hl.FillTransparency = T.trapESPFillTransparency
+                    hl.OutlineColor = T.trapESPColor
+                    hl.OutlineTransparency = 0
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl:SetAttribute("_AutoHUD", true)
+                    hl.Parent = trap
+                    T.trapHighlightCache[trap] = hl
+                    T.activeVisuals[hl] = true
+                else
+                    hl.Enabled = true
+                    if hl.FillColor ~= T.trapESPColor then hl.FillColor = T.trapESPColor end
+                    if hl.OutlineColor ~= T.trapESPColor then hl.OutlineColor = T.trapESPColor end
+                    if hl.FillTransparency ~= T.trapESPFillTransparency then hl.FillTransparency = T.trapESPFillTransparency end
+                end
+                if _G._AutoHUD_Dist.trap and myRoot and part then
+                    local d = calcDist(myRoot, part.Position)
+                    ensureDistBB(trap, part, "_AutoHUD_TrapDist", T.trapESPColor, "[距离：" .. d .. "]")
+                else
+                    removeChild(trap, "_AutoHUD_TrapDist")
+                end
+                if T.espTrapNameOn and part then
+                    ensureNameBB(trap, part, "_AutoHUD_TrapName", T.trapESPColor, "夹子")
+                else
+                    removeChild(trap, "_AutoHUD_TrapName")
+                end
+            elseif hl then
+                pcall(function() hl:Destroy() end)
+                T.trapHighlightCache[trap] = nil
+                removeChild(trap, "_AutoHUD_TrapDist")
+                removeChild(trap, "_AutoHUD_TrapName")
             end
         end
     end
-end)
+    for trap, hl in pairs(T.trapHighlightCache) do
+        if not seen[trap] then
+            if hl then pcall(function() hl:Destroy() end) end
+            T.trapHighlightCache[trap] = nil
+        end
+    end
+end
 
 local function trapPressQTE()
     local now = os.clock()
-    if now - qteLastPress < 0.03 then return end
-    qteLastPress = now
+    if now - T.qteLastPress < 0.03 then return end
+    T.qteLastPress = now
     pcall(function()
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
@@ -15204,85 +14444,78 @@ local function trapPressQTE()
 end
 
 RunService.Heartbeat:Connect(function()
-    if not autoQTEOn then
-        qteFired = false
-        qteLastTargetRot = nil
-        return
-    end
+    if not T.autoQTEOn then T.qteFired = false; T.qteLastTargetRot = nil; return end
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then
-        qteFired = false
-        qteLastTargetRot = nil
-        return
-    end
+    if not pg then T.qteFired = false; T.qteLastTargetRot = nil; return end
     local sc = pg:FindFirstChild("SkillCheckPromptGui") or pg:FindFirstChild("SkillCheckPromptGui-con")
-    if not sc then
-        qteFired = false
-        qteLastTargetRot = nil
-        return
-    end
+    if not sc then T.qteFired = false; T.qteLastTargetRot = nil; return end
     local check = sc:FindFirstChild("Check")
-    if not check or not check.Visible then
-        qteFired = false
-        qteLastTargetRot = nil
-        return
-    end
+    if not check or not check.Visible then T.qteFired = false; T.qteLastTargetRot = nil; return end
     local line = check:FindFirstChild("Line")
     if not line then return end
     local target = check:FindFirstChild("TrapPerfect")
-    if not target or not target.Visible then
-        target = check:FindFirstChild("TrapGoal")
-    end
+    if not target or not target.Visible then target = check:FindFirstChild("TrapGoal") end
     if not target or not target.Visible then return end
 
     local lineRot = line.Rotation
     local now = os.clock()
-
-    if qteLastTargetRot == nil or target.Rotation ~= qteLastTargetRot then
-        qteLastTargetRot = target.Rotation
-        qteFired = false
-        qtePrevRot = lineRot
-        qtePrevTime = now
+    if T.qteLastTargetRot == nil or target.Rotation ~= T.qteLastTargetRot then
+        T.qteLastTargetRot = target.Rotation
+        T.qteFired = false
+        T.qtePrevRot = lineRot
+        T.qtePrevTime = now
         return
     end
-
-    if qteFired then
-        qtePrevRot = lineRot
-        qtePrevTime = now
-        return
-    end
-
+    if T.qteFired then T.qtePrevRot = lineRot; T.qtePrevTime = now; return end
     local perfectStart = 102 + target.Rotation
     local perfectEnd = 116 + target.Rotation
     local perfectMid = (perfectStart + perfectEnd) / 2
-
     local speed = 0
-    if qtePrevTime > 0 and now > qtePrevTime and lineRot >= qtePrevRot then
-        speed = (lineRot - qtePrevRot) / (now - qtePrevTime)
+    if T.qtePrevTime > 0 and now > T.qtePrevTime and lineRot >= T.qtePrevRot then
+        speed = (lineRot - T.qtePrevRot) / (now - T.qtePrevTime)
     end
-
     if lineRot >= perfectStart and lineRot <= perfectEnd then
-        qteFired = true
+        T.qteFired = true
         trapPressQTE()
-        qtePrevRot = lineRot
-        qtePrevTime = now
+        T.qtePrevRot = lineRot
+        T.qtePrevTime = now
         return
     end
-
-    if lineRot < perfectStart and speed > 0 and qtePrevTime > 0 then
-        local dt = now - qtePrevTime
+    if lineRot < perfectStart and speed > 0 and T.qtePrevTime > 0 then
+        local dt = now - T.qtePrevTime
         local nextRot = lineRot + speed * dt
         if nextRot > perfectStart then
             local timeToMid = (perfectMid - lineRot) / speed
             if timeToMid > 0 and timeToMid <= dt * 1.5 then
-                qteFired = true
+                T.qteFired = true
                 task.delay(timeToMid, trapPressQTE)
             end
         end
     end
+    T.qtePrevRot = lineRot
+    T.qtePrevTime = now
+end)
 
-    qtePrevRot = lineRot
-    qtePrevTime = now
+task.spawn(function()
+    while true do
+        RunService.Heartbeat:Wait()
+        local now = os.clock()
+        if now - T.lastMainUpdate > 0.1 then
+            T.lastMainUpdate = now
+            if T.espGeneratorOn or T.espProgressOn or T.espGenNameOn then pcall(updateGenerators) end
+            if T.espKillerOn or T.espSurvivorOn or T.espKillerNameOn or T.espSurvivorNameOn then pcall(updatePlayers) end
+        end
+        if now - T.lastMapUpdate > 0.5 then
+            T.lastMapUpdate = now
+            if T.espPalletOn or T.espPalletNameOn then pcall(updatePallets) end
+            if T.espTrapOn or T.espTrapNameOn then pcall(updateTraps) end
+            if T.espPumpkinOn or T.espPumpkinNameOn then pcall(updatePumpkins) end
+        end
+        if now - T.lastWindowUpdate > 1 then
+            T.lastWindowUpdate = now
+            if T.espWindowOn or T.espHookOn or T.espWindowNameOn or T.espHookNameOn then pcall(updateWindowsAndHooks) end
+        end
+    end
 end)
 end
 local Tab = Window:Tab({  
