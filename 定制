@@ -12601,7 +12601,205 @@ MainTab:Toggle({ Title = "免疫坠落减速", Value = false, Callback = functio
 MainTab:Toggle({ Title = "自动拆夹子", Value = false, Callback = function(state) T.autoDisarmOn = state; if not T.autoDisarmOn then stopTrapDisarm("cancel") end end })
 MainTab:Toggle({ Title = "自动夹子完美点击", Value = false, Callback = function(state) T.autoQTEOn = state; if not T.autoQTEOn then T.qteFired = false; T.qteLastTargetRot = nil end end })
 MainTab:Toggle({ Title = "免疫夹子", Value = false, Callback = function(state) T.trapImmuneOn = state; if T.trapImmuneOn and not fallHookInstalled then installFallHook() end end })
+local acOn = false
+local acClickAt = 0
+local acDid = false
+local acCrouchUntil = 0
+local AC_ANIM_ID = "100014992013740"
+local AC_DIST = 14
+local AC_HOLD = 1.2
+local AC_FACE_DOT = 0.5
+local acBtnCache = nil
+local acWatchedAnims = setmetatable({}, {__mode = "k"})
 
+local aqOn = false
+local aqClicked = false
+
+local function acRoot(c)
+    if not c then return nil end
+    return c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso")
+end
+
+local function acIsKiller(c)
+    if not c then return false end
+    if c:GetAttribute("MorphedKiller") ~= nil then return true end
+    local p = Players:GetPlayerFromCharacter(c)
+    if p and p:GetAttribute("MorphedKiller") ~= nil then return true end
+    if c:FindFirstChild("MorphedKiller") then return true end
+    return false
+end
+
+local function acFire(sig)
+    if not sig then return false end
+    if type(firesignal) == "function" then
+        if pcall(firesignal, sig) then return true end
+    end
+    if type(getconnections) == "function" then
+        local ok, cs = pcall(getconnections, sig)
+        if ok and cs and #cs > 0 then
+            for _, c in ipairs(cs) do pcall(function() c:Fire() end) end
+            return true
+        end
+    end
+    return false
+end
+
+local function acGetCrouchBtn()
+    if acBtnCache and acBtnCache.Parent then return acBtnCache end
+    local mob = PlayerGui:FindFirstChild("Survivor-mob")
+    local ctl = mob and mob:FindFirstChild("Controls")
+    acBtnCache = ctl and ctl:FindFirstChild("crouch")
+    return acBtnCache
+end
+
+local function acClickCrouch()
+    local b = acGetCrouchBtn()
+    if not b then return false end
+    return acFire(b.MouseButton1Click)
+end
+
+local function acCheckHit(killerChar)
+    if not acOn then return end
+    local mc = LocalPlayer.Character
+    if not mc then return end
+    local mr = acRoot(mc)
+    local kr = acRoot(killerChar)
+    if not mr or not kr then return end
+    if (kr.Position - mr.Position).Magnitude > AC_DIST then return end
+    local v = mr.Position - kr.Position
+    if v.Magnitude >= 0.01 and kr.CFrame.LookVector:Dot(v.Unit) < AC_FACE_DOT then return end
+    local kh = killerChar:FindFirstChild("Head") or kr
+    local th = mc:FindFirstChild("Head") or mr
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = { killerChar, mc }
+    rp.IgnoreWater = true
+    if Workspace:Raycast(kh.Position, th.Position - kh.Position, rp) then return end
+    acCrouchUntil = os.clock() + AC_HOLD
+end
+
+local function acWatch(char)
+    if not char or not acIsKiller(char) then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator or acWatchedAnims[animator] then return end
+    acWatchedAnims[animator] = true
+    animator.AnimationPlayed:Connect(function(track)
+        if not acOn then return end
+        local anim = track and track.Animation
+        local id = anim and anim.AnimationId
+        if not id then return end
+        local num = string.match(id, "(%d+)")
+        if num ~= AC_ANIM_ID then return end
+        acCheckHit(char)
+    end)
+end
+
+local function acUpdate()
+    if not acOn then
+        if acDid then
+            local c = LocalPlayer.Character
+            if c and c:GetAttribute("Crouching") == true then
+                acClickCrouch()
+            end
+            acDid = false
+        end
+        return
+    end
+    local c = LocalPlayer.Character
+    if not c then return end
+    local isCrouching = c:GetAttribute("Crouching") == true
+    if os.clock() < acCrouchUntil then
+        if not isCrouching then
+            if os.clock() - acClickAt < 0.3 then return end
+            acClickAt = os.clock()
+            if acClickCrouch() then
+                acDid = true
+            end
+        end
+    elseif acDid and isCrouching then
+        acClickCrouch()
+        acDid = false
+    end
+end
+
+local function aqUpdate()
+    if not aqOn then return end
+    local gui = PlayerGui:FindFirstChild("SkillCheckPromptGui")
+    local check = gui and gui:FindFirstChild("Check")
+    if not check then return end
+    if not check.Visible then
+        aqClicked = false
+        return
+    end
+    if aqClicked then return end
+    local line = check:FindFirstChild("Line")
+    local goal = check:FindFirstChild("Goal")
+    if not line or not goal then return end
+    local r = line.Rotation
+    local lo = 102 + goal.Rotation
+    local hi = 116 + goal.Rotation
+    if r >= lo and r <= hi then
+        aqClicked = true
+        local mob = PlayerGui:FindFirstChild("Survivor-mob")
+        local ctl = mob and mob:FindFirstChild("Controls")
+        local action = ctl and ctl:FindFirstChild("action")
+        acFire(action and action.MouseButton1Down)
+    end
+end
+
+MainTab:Toggle({
+    Title = "骑士杀手横砍自动下蹲躲",
+    Value = false,
+    Callback = function(state)
+        acOn = state
+        if not state then
+            acCrouchUntil = 0
+        end
+    end
+})
+
+MainTab:Toggle({
+    Title = "自动治疗完美qte",
+    Value = false,
+    Callback = function(state)
+        aqOn = state
+    end
+})
+
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        if p.Character then acWatch(p.Character) end
+        p.CharacterAdded:Connect(function(ch)
+            task.delay(0.3, function() acWatch(ch) end)
+        end)
+    end
+end
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function(ch)
+        task.delay(0.3, function() acWatch(ch) end)
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(2)
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                acWatch(p.Character)
+            end
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    pcall(acUpdate)
+end)
+
+RunService.RenderStepped:Connect(function()
+    pcall(aqUpdate)
+end)
 EspTab:Toggle({ Title = "发电机透视", Value = false, Callback = function(state) T.espGeneratorOn = state; if T.espGeneratorOn then forceRescan() else purgeByName(GEN_HL) end end })
 EspTab:Toggle({ Title = "进度显示", Value = false, Callback = function(state) T.espProgressOn = state; if T.espProgressOn then forceRescan() else purgeByName(PROGRESS_NAME) end end })
 EspTab:Toggle({ Title = "杀手透视", Value = false, Callback = function(state) T.espKillerOn = state; if T.espKillerOn then pcall(updatePlayers) else purgeByName(KILLER_HL) end end })
