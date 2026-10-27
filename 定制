@@ -12800,6 +12800,49 @@ end)
 RunService.RenderStepped:Connect(function()
     pcall(aqUpdate)
 end)
+EspTab:Toggle({
+    Title = "一键开启全部透视",
+    Value = false,
+    Callback = function(state)
+        T.espGeneratorOn = state
+        T.espProgressOn = state
+        T.espKillerOn = state
+        T.espSurvivorOn = state
+        T.espPalletOn = state
+        T.espWindowOn = state
+        T.espHookOn = state
+        T.espTrapOn = state
+        T.espPumpkinOn = state
+        T.espGenNameOn = state
+        T.espKillerNameOn = state
+        T.espSurvivorNameOn = state
+        T.espPalletNameOn = state
+        T.espWindowNameOn = state
+        T.espHookNameOn = state
+        T.espTrapNameOn = state
+        T.espPumpkinNameOn = state
+        _G._AutoHUD_Dist.gen = state
+        _G._AutoHUD_Dist.killer = state
+        _G._AutoHUD_Dist.survivor = state
+        _G._AutoHUD_Dist.pallet = state
+        _G._AutoHUD_Dist.window = state
+        _G._AutoHUD_Dist.hook = state
+        _G._AutoHUD_Dist.trap = state
+        _G._AutoHUD_Dist.pumpkin = state
+        if state then
+            T.palletScanDirty = true
+            T.windowScanDirty = true
+            T.hookScanDirty = true
+            _G._AutoHUD_Pumpkin.scanDirty = true
+        else
+            purgeAllVisuals()
+            for k in pairs(T.trapHighlightCache) do T.trapHighlightCache[k] = nil end
+            if T.windowCache then for k in pairs(T.windowCache) do T.windowCache[k] = nil end end
+            if T.hookCache then for k in pairs(T.hookCache) do T.hookCache[k] = nil end end
+            if _G._AutoHUD_Pumpkin.cache then for k in pairs(_G._AutoHUD_Pumpkin.cache) do _G._AutoHUD_Pumpkin.cache[k] = nil end end
+        end
+    end
+})
 EspTab:Toggle({ Title = "发电机透视", Value = false, Callback = function(state) T.espGeneratorOn = state; if T.espGeneratorOn then forceRescan() else purgeByName(GEN_HL) end end })
 EspTab:Toggle({ Title = "进度显示", Value = false, Callback = function(state) T.espProgressOn = state; if T.espProgressOn then forceRescan() else purgeByName(PROGRESS_NAME) end end })
 EspTab:Toggle({ Title = "杀手透视", Value = false, Callback = function(state) T.espKillerOn = state; if T.espKillerOn then pcall(updatePlayers) else purgeByName(KILLER_HL) end end })
