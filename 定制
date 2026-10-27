@@ -13018,6 +13018,7 @@ do
     end
 
     _G._AutoHUD_Pumpkin.clear = clearAllPumpkins
+    T.updatePumpkins = updatePumpkins
     _G._AutoHUD_Pumpkin.scanDirty = true
 
     Workspace.DescendantAdded:Connect(function(obj)
@@ -13721,7 +13722,7 @@ local function updateGenerators()
                 removeChild(gen, PROGRESS_NAME)
             end
 
-            if _G._AutoHUD_Dist.gen and myRoot and T.espGeneratorOn and not done and p then
+            if _G._AutoHUD_Dist.gen and myRoot and not done and p then
                 local d = calcDist(myRoot, p.Position)
                 ensureDistBB(gen, p, "_AutoHUD_GenDist", T.genColor, "[距离：" .. d .. "]")
             else
@@ -13754,13 +13755,13 @@ local function updatePlayers()
                 if showS then ensureHighlight(char, T.survColor, SURV_HL) else removeChild(char, SURV_HL) end
 
                 local hrp = char:FindFirstChild("HumanoidRootPart")
-                if _G._AutoHUD_Dist.killer and showK and myRoot and hrp then
+                if _G._AutoHUD_Dist.killer and isKiller and myRoot and hrp then
                     local d = calcDist(myRoot, hrp.Position)
                     ensureDistBB(char, hrp, "_AutoHUD_KillerDist", T.killerColor, "[距离：" .. d .. "]")
                 else
                     removeChild(char, "_AutoHUD_KillerDist")
                 end
-                if _G._AutoHUD_Dist.survivor and showS and myRoot and hrp then
+                if _G._AutoHUD_Dist.survivor and not isKiller and myRoot and hrp then
                     local d = calcDist(myRoot, hrp.Position)
                     ensureDistBB(char, hrp, "_AutoHUD_SurvDist", T.survColor, "[距离：" .. d .. "]")
                 else
@@ -13835,7 +13836,7 @@ local function updatePallets()
             if target then removeChild(target, PALLET_HL) end
         end
 
-        if _G._AutoHUD_Dist.pallet and T.espPalletOn and myRoot and p then
+        if _G._AutoHUD_Dist.pallet and myRoot and p then
             local d = calcDist(myRoot, p.Position)
             ensureDistBB(pallet, p, "_AutoHUD_PalletDist", T.palletColor, "[距离：" .. d .. "]")
         else
@@ -13909,7 +13910,7 @@ local function applyAll(cache, color, hlName, isWindow, distName, distOn, nameNa
                 if T.espHookOn then ensureHighlight(obj, color, hlName) else removeChild(obj, hlName) end
             end
             local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart", true)
-            if distOn and myRoot and distName and part and (T.espWindowOn or T.espHookOn) then
+            if distOn and myRoot and distName and part then
                 local d = calcDist(myRoot, part.Position)
                 ensureDistBB(obj, part, distName, color, "[距离：" .. d .. "]")
             elseif distName then
@@ -13931,7 +13932,7 @@ local function ensureWindowListener()
     if T.windowListenerInstalled then return end
     T.windowListenerInstalled = true
     Workspace.DescendantAdded:Connect(function(obj)
-        if not T.espWindowOn and not T.espHookOn and not T.espWindowNameOn and not T.espHookNameOn then return end
+    if not T.espWindowOn and not T.espHookOn and not T.espWindowNameOn and not T.espHookNameOn and not _G._AutoHUD_Dist.window and not _G._AutoHUD_Dist.hook then return end
         local lower = string.lower(obj.Name)
         if string.find(lower, "window", 1, true) or lower == "inviswall" then T.windowScanDirty = true end
         if obj.Name == "Hook" then T.hookScanDirty = true end
@@ -13943,16 +13944,16 @@ local function ensureWindowListener()
 end
 
 local function updateWindowsAndHooks()
-    if not T.espWindowOn and not T.espHookOn and not T.espWindowNameOn and not T.espHookNameOn then return end
+    if not T.espWindowOn and not T.espHookOn and not T.espWindowNameOn and not T.espHookNameOn and not _G._AutoHUD_Dist.window and not _G._AutoHUD_Dist.hook then return end
     ensureWindowListener()
     local now = os.clock()
 
-    if (T.espWindowOn or T.espWindowNameOn) and (T.windowScanDirty or now - T.lastWindowCacheScan > 3) then
+    if (T.espWindowOn or T.espWindowNameOn or _G._AutoHUD_Dist.window) and (T.windowScanDirty or now - T.lastWindowCacheScan > 3) then
         T.lastWindowCacheScan = now
         T.windowScanDirty = false
         refreshWindowCache()
     end
-    if (T.espHookOn or T.espHookNameOn) and (T.hookScanDirty or now - T.lastHookCacheScan > 3) then
+    if (T.espHookOn or T.espHookNameOn or _G._AutoHUD_Dist.hook) and (T.hookScanDirty or now - T.lastHookCacheScan > 3) then
         T.lastHookCacheScan = now
         T.hookScanDirty = false
         refreshHookCache()
@@ -14647,23 +14648,21 @@ local function updateTraps()
                     if hl.OutlineColor ~= T.trapESPColor then hl.OutlineColor = T.trapESPColor end
                     if hl.FillTransparency ~= T.trapESPFillTransparency then hl.FillTransparency = T.trapESPFillTransparency end
                 end
-                if _G._AutoHUD_Dist.trap and myRoot and part then
-                    local d = calcDist(myRoot, part.Position)
-                    ensureDistBB(trap, part, "_AutoHUD_TrapDist", T.trapESPColor, "[距离：" .. d .. "]")
-                else
-                    removeChild(trap, "_AutoHUD_TrapDist")
-                end
-                if T.espTrapNameOn and part then
-                    ensureNameBB(trap, part, "_AutoHUD_TrapName", T.trapESPColor, "夹子")
-                else
-                    removeChild(trap, "_AutoHUD_TrapName")
-                end
-            elseif hl then
-                pcall(function() hl:Destroy() end)
-                T.trapHighlightCache[trap] = nil
-                removeChild(trap, "_AutoHUD_TrapDist")
-                removeChild(trap, "_AutoHUD_TrapName")
-            end
+                elseif hl then
+    pcall(function() hl:Destroy() end)
+    T.trapHighlightCache[trap] = nil
+end
+if _G._AutoHUD_Dist.trap and myRoot and part then
+    local d = calcDist(myRoot, part.Position)
+    ensureDistBB(trap, part, "_AutoHUD_TrapDist", T.trapESPColor, "[距离：" .. d .. "]")
+else
+    removeChild(trap, "_AutoHUD_TrapDist")
+end
+if T.espTrapNameOn and part then
+    ensureNameBB(trap, part, "_AutoHUD_TrapName", T.trapESPColor, "夹子")
+else
+    removeChild(trap, "_AutoHUD_TrapName")
+end
         end
     end
     for trap, hl in pairs(T.trapHighlightCache) do
@@ -14736,26 +14735,53 @@ RunService.Heartbeat:Connect(function()
     T.qtePrevRot = lineRot
     T.qtePrevTime = now
 end)
-
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        pcall(function()
+            local char = LocalPlayer.Character
+            local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+            if not myRoot then return end
+            local myPos = myRoot.Position
+            local list = {}
+            for obj in pairs(T.activeVisuals) do
+                if typeof(obj) == "Instance" and obj:IsA("BillboardGui") and string.find(obj.Name, "Dist", 1, true) then
+                    list[#list + 1] = obj
+                end
+            end
+            for _, bb in ipairs(list) do
+                local part = bb.Adornee
+                if part and part.Parent and part:IsA("BasePart") then
+                    local d = math.floor((part.Position - myPos).Magnitude + 0.5)
+                    local lbl = bb:FindFirstChild("Label")
+                    if lbl then
+                        local text = "[距离：" .. d .. "]"
+                        if lbl.Text ~= text then lbl.Text = text end
+                    end
+                end
+            end
+        end)
+    end
+end)
 task.spawn(function()
     while true do
         RunService.Heartbeat:Wait()
         local now = os.clock()
         if now - T.lastMainUpdate > 0.1 then
-            T.lastMainUpdate = now
-            if T.espGeneratorOn or T.espProgressOn or T.espGenNameOn then pcall(updateGenerators) end
-            if T.espKillerOn or T.espSurvivorOn or T.espKillerNameOn or T.espSurvivorNameOn then pcall(updatePlayers) end
-        end
+    T.lastMainUpdate = now
+    if T.espGeneratorOn or T.espProgressOn or T.espGenNameOn or _G._AutoHUD_Dist.gen then pcall(updateGenerators) end
+    if T.espKillerOn or T.espSurvivorOn or T.espKillerNameOn or T.espSurvivorNameOn or _G._AutoHUD_Dist.killer or _G._AutoHUD_Dist.survivor then pcall(updatePlayers) end
+end
         if now - T.lastMapUpdate > 0.5 then
-            T.lastMapUpdate = now
-            if T.espPalletOn or T.espPalletNameOn then pcall(updatePallets) end
-            if T.espTrapOn or T.espTrapNameOn then pcall(updateTraps) end
-            if T.espPumpkinOn or T.espPumpkinNameOn then pcall(updatePumpkins) end
-        end
+    T.lastMapUpdate = now
+    if T.espPalletOn or T.espPalletNameOn or _G._AutoHUD_Dist.pallet then pcall(updatePallets) end
+    if T.espTrapOn or T.espTrapNameOn or _G._AutoHUD_Dist.trap then pcall(updateTraps) end
+    if T.espPumpkinOn or T.espPumpkinNameOn or _G._AutoHUD_Dist.pumpkin then pcall(T.updatePumpkins) end
+end
         if now - T.lastWindowUpdate > 1 then
-            T.lastWindowUpdate = now
-            if T.espWindowOn or T.espHookOn or T.espWindowNameOn or T.espHookNameOn then pcall(updateWindowsAndHooks) end
-        end
+    T.lastWindowUpdate = now
+    if T.espWindowOn or T.espHookOn or T.espWindowNameOn or T.espHookNameOn or _G._AutoHUD_Dist.window or _G._AutoHUD_Dist.hook then pcall(updateWindowsAndHooks) end
+end
     end
 end)
 end
