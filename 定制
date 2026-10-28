@@ -12074,7 +12074,8 @@ local alertGui = Instance.new("ScreenGui")
 alertGui.Name = "StunAlertGui"
 alertGui.ResetOnSpawn = false
 alertGui.IgnoreGuiInset = true
-alertGui.DisplayOrder = 998
+alertGui.DisplayOrder = 999
+alertGui.Enabled = true
 alertGui.Parent = PlayerGui
 
 local alertFrame = Instance.new("Frame")
@@ -13799,10 +13800,51 @@ local function getPalletTarget(pallet)
 end
 
 local function clearPalletVisuals()
+    local toDestroy = {}
     for obj in pairs(T.activeVisuals) do
         if obj.Name == PALLET_HL or obj.Name == "_AutoHUD_PalletDist" or obj.Name == "_AutoHUD_PalletName" then
-            pcall(function() obj:Destroy() end)
-            T.activeVisuals[obj] = nil
+            toDestroy[#toDestroy + 1] = obj
+        end
+    end
+    for _, obj in ipairs(toDestroy) do
+        T.activeVisuals[obj] = nil
+        pcall(function() obj:Destroy() end)
+    end
+end
+
+local function processPalletNode(pallet, myRoot)
+    if not pallet or not pallet.Parent then return end
+    local target = getPalletTarget(pallet)
+    local intact = pallet:FindFirstChild("Intact")
+    if intact and intact ~= target and (intact:IsA("Model") or intact:IsA("BasePart")) then removeChild(intact, PALLET_HL) end
+    local dropped = pallet:FindFirstChild("Dropped") or pallet:FindFirstChild("Broken")
+    if dropped and dropped ~= target and (dropped:IsA("Model") or dropped:IsA("BasePart")) then removeChild(dropped, PALLET_HL) end
+    if pallet ~= target and (pallet:IsA("Model") or pallet:IsA("BasePart")) then removeChild(pallet, PALLET_HL) end
+    local p = target and findAnyPart(target)
+    if T.espPalletOn and target then
+        ensureHighlight(target, T.palletColor, PALLET_HL)
+    else
+        if target then removeChild(target, PALLET_HL) end
+    end
+    if _G._AutoHUD_Dist.pallet and myRoot and p then
+        local d = calcDist(myRoot, p.Position)
+        ensureDistBB(pallet, p, "_AutoHUD_PalletDist", T.palletColor, "[距离：" .. d .. "]")
+    else
+        removeChild(pallet, "_AutoHUD_PalletDist")
+    end
+    if T.espPalletNameOn and p then
+        ensureNameBB(pallet, p, "_AutoHUD_PalletName", T.palletColor, "板子")
+    else
+        removeChild(pallet, "_AutoHUD_PalletName")
+    end
+end
+
+local function traversePallets(node, myRoot)
+    for _, child in ipairs(node:GetChildren()) do
+        if child:IsA("Folder") then
+            traversePallets(child, myRoot)
+        elseif child:IsA("Model") or child:IsA("BasePart") then
+            processPalletNode(child, myRoot)
         end
     end
 end
@@ -13819,36 +13861,7 @@ local function updatePallets()
     end
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    for _, pallet in ipairs(pallets:GetChildren()) do
-        if not pallet.Parent then continue end
-        local target = getPalletTarget(pallet)
-        local intact = pallet:FindFirstChild("Intact")
-        if intact and intact ~= target and (intact:IsA("Model") or intact:IsA("BasePart")) then removeChild(intact, PALLET_HL) end
-        local dropped = pallet:FindFirstChild("Dropped") or pallet:FindFirstChild("Broken")
-        if dropped and dropped ~= target and (dropped:IsA("Model") or dropped:IsA("BasePart")) then removeChild(dropped, PALLET_HL) end
-        if pallet ~= target and (pallet:IsA("Model") or pallet:IsA("BasePart")) then removeChild(pallet, PALLET_HL) end
-
-        local p = target and findAnyPart(target)
-
-        if T.espPalletOn and target then
-            ensureHighlight(target, T.palletColor, PALLET_HL)
-        else
-            if target then removeChild(target, PALLET_HL) end
-        end
-
-        if _G._AutoHUD_Dist.pallet and myRoot and p then
-            local d = calcDist(myRoot, p.Position)
-            ensureDistBB(pallet, p, "_AutoHUD_PalletDist", T.palletColor, "[距离：" .. d .. "]")
-        else
-            removeChild(pallet, "_AutoHUD_PalletDist")
-        end
-
-        if T.espPalletNameOn and p then
-            ensureNameBB(pallet, p, "_AutoHUD_PalletName", T.palletColor, "板子")
-        else
-            removeChild(pallet, "_AutoHUD_PalletName")
-        end
-    end
+    traversePallets(pallets, myRoot)
 end
 
 T.windowCache = setmetatable({}, {__mode = "k"})
@@ -14382,32 +14395,44 @@ local function playAlertSound()
 end
 
 local function updateAlertUi(dist)
+    if not alertFrame or not alertFrame.Parent then return end
+    if not alertGui.Enabled then alertGui.Enabled = true end
+
     local show = T.alertEnabled and (not isLocalPlayerKiller()) and dist <= T.alertRadius
+
     if show then
         local span = T.alertRadius - 5
         if span <= 0 then span = 1 end
         local t = math.clamp((dist - 5) / span, 0, 1)
         alertLabel.TextColor3 = Color3.new(1, t, t)
         alertLabel.Text = string.format("杀手在你的%d范围内", math.floor(dist + 0.5))
+
         if not T.alertActive then
             T.alertActive = true
             alertFrame.Visible = true
+            if T.alertTween then pcall(function() T.alertTween:Cancel() end) end
             alertFrame.Position = T.hidePos
-            playAlertSound()
-            if T.alertTween then T.alertTween:Cancel() end
             T.alertTween = TweenService:Create(alertFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = T.targetPos })
             T.alertTween:Play()
+            task.delay(0.32, function()
+                if T.alertActive and alertFrame and alertFrame.Parent then
+                    alertFrame.Position = T.targetPos
+                end
+            end)
         else
             alertFrame.Visible = true
-            if alertFrame.Position ~= T.targetPos and T.alertTween == nil then alertFrame.Position = T.targetPos end
         end
     else
         if T.alertActive then
             T.alertActive = false
-            if T.alertTween then T.alertTween:Cancel() end
+            if T.alertTween then pcall(function() T.alertTween:Cancel() end) end
             T.alertTween = TweenService:Create(alertFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = T.hidePos })
             T.alertTween:Play()
-            task.delay(0.3, function() if not T.alertActive then alertFrame.Visible = false end end)
+            task.delay(0.35, function()
+                if not T.alertActive and alertFrame and alertFrame.Parent then
+                    alertFrame.Visible = false
+                end
+            end)
         else
             alertFrame.Visible = false
         end
@@ -14418,6 +14443,7 @@ task.spawn(function()
     while true do
         task.wait(0.1)
         pcall(function()
+            if not alertFrame or not alertFrame.Parent then return end
             if T.alertEnabled and not isLocalPlayerKiller() then
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -14433,7 +14459,9 @@ task.spawn(function()
                                 if pHum and pHum.Health > 0 and pHrp then
                                     local mk = pChar:GetAttribute("MorphedKiller")
                                     if mk == nil then mk = player:GetAttribute("MorphedKiller") end
-                                    local isK = (mk ~= nil and mk ~= false) or pChar:FindFirstChild("MorphedKiller") ~= nil
+                                    local isK = (mk ~= nil and mk ~= false)
+                                        or pChar:FindFirstChild("MorphedKiller") ~= nil
+                                        or (player.Team and player.Team.Name == "Killer")
                                     if isK then
                                         local d = (pHrp.Position - myPos).Magnitude
                                         if d < nearestDist then nearestDist = d end
