@@ -8024,7 +8024,6 @@ Tab:Toggle({
     end
 })
 
-
 Tab:Toggle({
     Title = "透视死妈怪物",
     Value = false,
@@ -8040,7 +8039,11 @@ Tab:Toggle({
         
         if _G.ESPTargets then
             for _, data in pairs(_G.ESPTargets) do
-                if data.Highlight then data.Highlight:Destroy() end
+                if data.Highlights then
+                    for _, hl in ipairs(data.Highlights) do
+                        hl:Destroy()
+                    end
+                end
                 if data.Billboard then data.Billboard:Destroy() end
             end
         end
@@ -8081,17 +8084,33 @@ Tab:Toggle({
 
             local plr = game:GetService("Players").LocalPlayer
 
-            local function addESP(obj)
-                if obj:FindFirstChild("EntHighlight") then return nil end
-                
+            local function makeHighlight(part, list)
+                if part:FindFirstChild("EntHighlight") then return end
                 local hl = Instance.new("Highlight")
                 hl.Name = "EntHighlight"
                 hl.FillColor = Color3.fromRGB(255, 0, 0)
                 hl.FillTransparency = 0.5
                 hl.OutlineColor = Color3.fromRGB(255, 0, 0)
                 hl.OutlineTransparency = 0
-                hl.Adornee = obj
-                hl.Parent = obj
+                hl.Adornee = part
+                hl.Parent = part
+                table.insert(list, hl)
+            end
+
+            local function addESP(obj)
+                if obj:FindFirstChild("EntBillboard") then return nil end
+
+                local highlights = {}
+
+                if obj:IsA("BasePart") then
+                    makeHighlight(obj, highlights)
+                elseif obj:IsA("Model") then
+                    for _, desc in ipairs(obj:GetDescendants()) do
+                        if desc:IsA("BasePart") then
+                            makeHighlight(desc, highlights)
+                        end
+                    end
+                end
 
                 local bb = Instance.new("BillboardGui")
                 bb.Name = "EntBillboard"
@@ -8111,7 +8130,7 @@ Tab:Toggle({
                 txt.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
                 txt.Parent = bb
 
-                return {Obj = obj, Highlight = hl, Billboard = bb, Text = txt}
+                return {Obj = obj, Highlights = highlights, Billboard = bb, Text = txt}
             end
 
             local function checkObj(obj)
@@ -8127,7 +8146,17 @@ Tab:Toggle({
                 checkObj(obj)
             end
 
-            table.insert(_G.ESPConns, workspace.DescendantAdded:Connect(checkObj))
+            table.insert(_G.ESPConns, workspace.DescendantAdded:Connect(function(obj)
+                checkObj(obj)
+                if obj:IsA("BasePart") then
+                    for _, data in ipairs(_G.ESPTargets) do
+                        if data.Obj:IsA("Model") and data.Obj ~= obj and obj:IsDescendantOf(data.Obj) and not obj:FindFirstChild("EntHighlight") then
+                            makeHighlight(obj, data.Highlights)
+                            break
+                        end
+                    end
+                end
+            end))
 
             table.insert(_G.ESPConns, workspace.DescendantRemoving:Connect(function(obj)
                 for i = #_G.ESPTargets, 1, -1 do
@@ -8155,7 +8184,11 @@ Tab:Toggle({
                                     data.Text.Text = obj.Name
                                 end
                             else
-                                if data.Highlight then data.Highlight:Destroy() end
+                                if data.Highlights then
+                                    for _, hl in ipairs(data.Highlights) do
+                                        hl:Destroy()
+                                    end
+                                end
                                 if data.Billboard then data.Billboard:Destroy() end
                                 table.remove(_G.ESPTargets, i)
                             end
@@ -8167,6 +8200,7 @@ Tab:Toggle({
         end
     end
 })
+
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
