@@ -7788,6 +7788,11 @@ local targets = {
     ["Theodore Model"] = true,
     ["Theodore Model TEST"] = true,
     ["baldi leviathan"] = true,
+    ["Frostbite Leviathan"] = true,
+    ["Grand Crimson Jellyfish"] = true,
+    ["Grand Moonlight Jellyfish"] = true,
+    ["Siren"] = true,
+    ["Test Leviathan"] = true,
 }
 
 local function getEntityPosition(object)
@@ -8067,6 +8072,11 @@ Tab:Toggle({
     ["Theodore Model"] = true,
     ["Theodore Model TEST"] = true,
     ["baldi leviathan"] = true,
+    ["Frostbite Leviathan"] = true,
+    ["Grand Crimson Jellyfish"] = true,
+    ["Grand Moonlight Jellyfish"] = true,
+    ["Siren"] = true,
+    ["Test Leviathan"] = true,
 }
 
             local plr = game:GetService("Players").LocalPlayer
