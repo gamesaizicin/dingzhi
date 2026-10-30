@@ -8036,15 +8036,22 @@ Tab:Toggle({
             end
         end
         _G.ESPConns = {}
+
+        for _, desc in ipairs(workspace:GetDescendants()) do
+            if desc.Name == "EntHighlight" or desc.Name == "EntBillboard" then
+                desc:Destroy()
+            end
+        end
         
         if _G.ESPTargets then
             for _, data in pairs(_G.ESPTargets) do
                 if data.Highlights then
                     for _, hl in ipairs(data.Highlights) do
-                        hl:Destroy()
+                        if hl and hl.Parent then hl:Destroy() end
                     end
                 end
-                if data.Billboard then data.Billboard:Destroy() end
+                if data.Highlight and data.Highlight.Parent then data.Highlight:Destroy() end
+                if data.Billboard and data.Billboard.Parent then data.Billboard:Destroy() end
             end
         end
         _G.ESPTargets = {}
@@ -8084,30 +8091,42 @@ Tab:Toggle({
 
             local plr = game:GetService("Players").LocalPlayer
 
-            local function makeHighlight(part, list)
-                if part:FindFirstChild("EntHighlight") then return end
-                local hl = Instance.new("Highlight")
-                hl.Name = "EntHighlight"
-                hl.FillColor = Color3.fromRGB(255, 0, 0)
-                hl.FillTransparency = 0.5
-                hl.OutlineColor = Color3.fromRGB(255, 0, 0)
-                hl.OutlineTransparency = 0
-                hl.Adornee = part
-                hl.Parent = part
-                table.insert(list, hl)
-            end
-
             local function addESP(obj)
-                if obj:FindFirstChild("EntBillboard") then return nil end
+                for _, d in ipairs(_G.ESPTargets) do
+                    if d.Obj == obj then return nil end
+                end
 
                 local highlights = {}
 
+                local function addHighlightToPart(part)
+                    if part:FindFirstChild("EntHighlight") then return end
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "EntHighlight"
+                    hl.FillColor = Color3.fromRGB(255, 0, 0)
+                    hl.FillTransparency = 0.5
+                    hl.OutlineColor = Color3.fromRGB(255, 0, 0)
+                    hl.OutlineTransparency = 0
+                    hl.Adornee = part
+                    hl.Parent = part
+                    table.insert(highlights, hl)
+                end
+
                 if obj:IsA("BasePart") then
-                    makeHighlight(obj, highlights)
+                    addHighlightToPart(obj)
                 elseif obj:IsA("Model") then
                     for _, desc in ipairs(obj:GetDescendants()) do
                         if desc:IsA("BasePart") then
-                            makeHighlight(desc, highlights)
+                            addHighlightToPart(desc)
+                        end
+                    end
+                end
+
+                local adornee = obj
+                if obj:IsA("Model") and not obj.PrimaryPart then
+                    for _, desc in ipairs(obj:GetDescendants()) do
+                        if desc:IsA("BasePart") then
+                            adornee = desc
+                            break
                         end
                     end
                 end
@@ -8117,7 +8136,7 @@ Tab:Toggle({
                 bb.Size = UDim2.new(0, 200, 0, 50)
                 bb.AlwaysOnTop = true
                 bb.ExtentsOffset = Vector3.new(0, 3, 0)
-                bb.Adornee = obj
+                bb.Adornee = adornee
                 bb.Parent = obj
 
                 local txt = Instance.new("TextLabel")
@@ -8146,17 +8165,7 @@ Tab:Toggle({
                 checkObj(obj)
             end
 
-            table.insert(_G.ESPConns, workspace.DescendantAdded:Connect(function(obj)
-                checkObj(obj)
-                if obj:IsA("BasePart") then
-                    for _, data in ipairs(_G.ESPTargets) do
-                        if data.Obj:IsA("Model") and data.Obj ~= obj and obj:IsDescendantOf(data.Obj) and not obj:FindFirstChild("EntHighlight") then
-                            makeHighlight(obj, data.Highlights)
-                            break
-                        end
-                    end
-                end
-            end))
+            table.insert(_G.ESPConns, workspace.DescendantAdded:Connect(checkObj))
 
             table.insert(_G.ESPConns, workspace.DescendantRemoving:Connect(function(obj)
                 for i = #_G.ESPTargets, 1, -1 do
@@ -8186,10 +8195,10 @@ Tab:Toggle({
                             else
                                 if data.Highlights then
                                     for _, hl in ipairs(data.Highlights) do
-                                        hl:Destroy()
+                                        if hl and hl.Parent then hl:Destroy() end
                                     end
                                 end
-                                if data.Billboard then data.Billboard:Destroy() end
+                                if data.Billboard and data.Billboard.Parent then data.Billboard:Destroy() end
                                 table.remove(_G.ESPTargets, i)
                             end
                         end
