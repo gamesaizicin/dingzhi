@@ -14866,6 +14866,526 @@ end
     end
 end)
 end
+local function xueluan()
+Window:Divider()
+local Tab = Window:Tab({  
+    Title = "功能",  
+    Icon = "house",  
+    Locked = false,
+})
+do
+    local Players = game:GetService("Players")
+    local UIS = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local vim
+    pcall(function()
+        vim = game:GetService("VirtualInputManager")
+    end)
+
+    local old = pg:FindFirstChild("RhythmFJHoldAssist")
+    if old then
+        old:Destroy()
+    end
+
+    local running = false
+    local states = {}
+    local notes = {}
+    local root
+    local addConn, removeConn
+
+    local TAP_TIME = 0.03
+    local KEYS_TWO = {
+        Enum.KeyCode.F,
+        Enum.KeyCode.J
+    }
+    local KEYS_FOUR = {
+        Enum.KeyCode.X,
+        Enum.KeyCode.C,
+        Enum.KeyCode.N,
+        Enum.KeyCode.M
+    }
+
+    local lanes = {}
+    local laneCount = 0
+    local fourMode = false
+    local presses = 0
+
+    local function sendKey(isDown, key)
+        if not vim then
+            return false
+        end
+
+        return pcall(function()
+            vim:SendKeyEvent(isDown, key, false, game)
+        end)
+    end
+
+    local function release(lane)
+        if lane.down then
+            sendKey(false, lane.key)
+        end
+
+        lane.down = false
+        lane.owner = nil
+    end
+
+    local function releaseAll()
+        for _, lane in ipairs(lanes) do
+            release(lane)
+        end
+    end
+
+    local function setMode(four)
+        releaseAll()
+        fourMode = four
+
+        local keys = four and KEYS_FOUR or KEYS_TWO
+
+        lanes = {}
+
+        for i, key in ipairs(keys) do
+            lanes[i] = {
+                key = key,
+                down = false,
+                owner = nil,
+                releaseAt = 0
+            }
+        end
+
+        laneCount = #keys
+        table.clear(states)
+    end
+
+    setMode(false)
+
+    local function press(lane, note, hold, now)
+        if lane.down then
+            sendKey(false, lane.key)
+        end
+
+        if not sendKey(true, lane.key) then
+            lane.down = false
+            lane.owner = nil
+            return false
+        end
+
+        lane.down = true
+        lane.owner = hold and note or nil
+        lane.releaseAt = now + TAP_TIME
+
+        return true
+    end
+
+    local function halt()
+        running = false
+        releaseAll()
+    end
+
+    local function shownUntil(object, stopAt)
+        while object and object ~= stopAt do
+            if object:IsA("GuiObject") and not object.Visible then
+                return false
+            end
+
+            if object:IsA("ScreenGui") and not object.Enabled then
+                return false
+            end
+
+            object = object.Parent
+        end
+
+        return object == stopAt
+    end
+
+    local function center(object)
+        return object.AbsolutePosition + object.AbsoluteSize * 0.5
+    end
+
+    local function track(newRoot)
+        if root == newRoot then
+            return
+        end
+
+        if addConn then
+            addConn:Disconnect()
+        end
+
+        if removeConn then
+            removeConn:Disconnect()
+        end
+
+        releaseAll()
+        root = newRoot
+        table.clear(notes)
+        table.clear(states)
+
+        local function add(object)
+            if object:IsA("GuiObject") and object.Name == "NoteTemplate" then
+                notes[object] = true
+            end
+        end
+
+        for _, object in ipairs(root:GetDescendants()) do
+            add(object)
+        end
+
+        addConn = root.DescendantAdded:Connect(add)
+
+        removeConn = root.DescendantRemoving:Connect(function(object)
+            for _, lane in ipairs(lanes) do
+                if lane.owner == object then
+                    release(lane)
+                end
+            end
+
+            notes[object] = nil
+            states[object] = nil
+        end)
+    end
+
+    local function collectReceptors(group)
+        local list = {}
+
+        for _, child in ipairs(group:GetChildren()) do
+            local number = child.Name:match("^Receptor(%d+)$")
+
+            if number and child:IsA("GuiObject") then
+                table.insert(list, {
+                    obj = child,
+                    idx = tonumber(number)
+                })
+            end
+        end
+
+        table.sort(list, function(a, b)
+            return a.idx < b.idx
+        end)
+
+        local out = {}
+
+        for i, entry in ipairs(list) do
+            out[i] = entry.obj
+        end
+
+        return out
+    end
+
+    local function holdInfo(note)
+        local tail = note:FindFirstChild("Tail")
+
+        if not tail then
+            return false
+        end
+
+        return shownUntil(tail, root)
+    end
+
+    local function step()
+        if not running then
+            return
+        end
+
+        if UIS:GetFocusedTextBox() then
+            return
+        end
+
+        local ui = pg:FindFirstChild("RhythmServiceUI")
+        local newRoot = ui and ui:FindFirstChild("RhythmRoot")
+
+        if not newRoot or not shownUntil(newRoot, pg) then
+            halt()
+            return
+        end
+
+        track(newRoot)
+
+        local group = newRoot:FindFirstChild("Receptors")
+
+        if not group then
+            halt()
+            return
+        end
+
+        local list = collectReceptors(group)
+
+        if #list < 2 then
+            halt()
+            return
+        end
+
+        local wantFour = #list >= 3
+
+        if wantFour ~= fourMode then
+            setMode(wantFour)
+        end
+
+        local nrec = math.min(#list, laneCount)
+        local recs = {}
+        local cens = {}
+
+        for i = 1, nrec do
+            recs[i] = list[i]
+            cens[i] = center(list[i])
+        end
+
+        local now = os.clock()
+
+        for note in pairs(notes) do
+            local state = states[note]
+
+            if not note.Parent
+                or note.AbsoluteSize.X <= 0
+                or note.AbsoluteSize.Y <= 0
+                or not shownUntil(note, root)
+            then
+                if state then
+                    for _, lane in ipairs(lanes) do
+                        if lane.owner == note then
+                            release(lane)
+                        end
+                    end
+
+                    states[note] = nil
+                end
+
+                continue
+            end
+
+            if state and state.time and now - state.time < 0.0005 then
+                continue
+            end
+
+            local position = center(note)
+            local laneIndex = 1
+            local best = math.abs(position.X - cens[1].X)
+
+            for i = 2, nrec do
+                local distance = math.abs(position.X - cens[i].X)
+
+                if distance < best then
+                    best = distance
+                    laneIndex = i
+                end
+            end
+
+            local receptor = recs[laneIndex]
+            local receptorCenter = cens[laneIndex]
+            local dy = position.Y - receptorCenter.Y
+            local hold = holdInfo(note)
+
+            if not state then
+                state = {}
+                states[note] = state
+            end
+
+            if state.lane and state.lane ~= laneIndex then
+                if lanes[state.lane] and lanes[state.lane].owner == note then
+                    release(lanes[state.lane])
+                end
+
+                state.hit = false
+                state.holding = false
+                state.dy = nil
+            end
+
+            if state.pos and (
+                (position - state.pos).Magnitude > 120
+                or (
+                    state.hit
+                    and not hold
+                    and not state.holding
+                    and math.abs(dy) > 80
+                )
+            ) then
+                if lanes[laneIndex].owner == note then
+                    release(lanes[laneIndex])
+                end
+
+                state.hit = false
+                state.holding = false
+                state.dy = nil
+            end
+
+            local near = math.abs(position.X - receptorCenter.X)
+                <= math.max(12, math.min(50, receptor.AbsoluteSize.X * 0.45))
+
+            if near and not state.hit then
+                local ady = math.abs(dy)
+                local fire = false
+
+                if state.dy then
+                    local stepY = math.abs(dy - state.dy)
+
+                    if state.dy * dy <= 0 and stepY < 150 then
+                        fire = true
+                    elseif ady <= math.abs(state.dy)
+                        and ady <= math.max(4, stepY * 0.6)
+                    then
+                        fire = true
+                    end
+                else
+                    fire = ady <= 8
+                end
+
+                if fire then
+                    if press(lanes[laneIndex], note, hold, now) then
+                        presses += 1
+                        state.hit = true
+                        state.holding = hold
+                    else
+                        halt()
+                        return
+                    end
+                end
+            end
+
+            if state.holding and lanes[laneIndex].owner == note then
+                local tail = note:FindFirstChild("Tail")
+                local tailGone = not tail or not shownUntil(tail, root)
+                local notePast = math.abs(dy)
+                    > math.max(30, receptor.AbsoluteSize.Y)
+
+                if tailGone or notePast then
+                    release(lanes[laneIndex])
+                    state.holding = false
+                end
+            end
+
+            state.lane = laneIndex
+            state.pos = position
+            state.dy = dy
+            state.time = now
+        end
+
+        for _, lane in ipairs(lanes) do
+            if lane.down and not lane.owner and now >= lane.releaseAt then
+                release(lane)
+            end
+        end
+    end
+
+    RunService.RenderStepped:Connect(step)
+    RunService.Heartbeat:Connect(step)
+
+    UIS.WindowFocusReleased:Connect(function()
+        releaseAll()
+    end)
+
+    Tab:Toggle({
+        Title = "自动点击音符",
+        Value = false,
+        Callback = function(state)
+            if state then
+                if not vim then
+                    return
+                end
+
+                if running then
+                    return
+                end
+
+                releaseAll()
+                table.clear(states)
+                running = true
+            else
+                halt()
+            end
+        end
+    })
+end
+
+do
+    local Players = game:GetService("Players")
+    local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+    local remote = game:GetService("ReplicatedStorage")
+        :WaitForChild("Remotes")
+        :WaitForChild("Minigame")
+
+    local previous = pg:FindFirstChild("SpecimenLoop")
+
+    if previous then
+        previous:Destroy()
+    end
+
+    local running = false
+    local current = 1
+    local generation = 0
+
+    local function stop()
+        running = false
+        generation += 1
+    end
+
+    local function isOpen()
+        local hunt = pg:FindFirstChild("SpecimenHunt")
+
+        if not hunt then
+            return false
+        end
+
+        if hunt:IsA("ScreenGui") and not hunt.Enabled then
+            return false
+        end
+
+        local stage = hunt:FindFirstChild("Stage")
+
+        if stage and stage:IsA("GuiObject") and not stage.Visible then
+            return false
+        end
+
+        return true
+    end
+
+    Tab:Toggle({
+        Title = "自动完成查找微生物",
+        Value = false,
+        Callback = function(state)
+            if not state then
+                stop()
+                return
+            end
+
+            if running or not isOpen() then
+                return
+            end
+
+            running = true
+            current = 1
+            generation += 1
+
+            local token = generation
+
+            task.spawn(function()
+                while running and generation == token do
+                    if not isOpen() then
+                        stop()
+                        break
+                    end
+
+                    local ok = pcall(function()
+                        remote:FireServer("Pick", current)
+                    end)
+
+                    if not ok then
+                        stop()
+                        break
+                    end
+
+                    current += 1
+
+                    if current > 100 then
+                        current = 1
+                    end
+
+                    task.wait(0.01)
+                end
+            end)
+        end
+    })
+end
+end
 local Tab = Window:Tab({  
     Title = "游戏选择",  
     Icon = "house",  
@@ -14904,7 +15424,8 @@ local game_functions = {
     [79301883261704] = cmdcz,
     [103120571981776] = pashan,
     [116362330852395] = zihuowu,
-    [93978595733734] = baoliqu
+    [93978595733734] = baoliqu,
+    [76165410142500] = xueluan
 }
 
 local function check_game()
@@ -15052,5 +15573,11 @@ Tab:Button({
     Title = "暴力区",
     Callback = function()
     baoliqu()
+    end
+})
+Tab:Button({
+    Title = "学乱",
+    Callback = function()
+    xueluan()
     end
 })
